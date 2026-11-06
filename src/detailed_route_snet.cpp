@@ -1,5 +1,6 @@
 #include "pwroute.h" 
 #include "pin_edge.h"
+#include <phydb/common/logging.h>
 #include <math.h>
 using namespace phydb;
 namespace pwroute {
@@ -303,6 +304,7 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
     bool foundM1M3 = false;
     double touchX, touchY;
     std::string M1M2ViaName;
+    std::size_t M1M2ViaCutCount = 0;
     int M1M2ViaLength;
    
     bool M2thinFail = false;
@@ -356,7 +358,8 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
             }
             if(!M1cover) {
                 M1M2ViaName = via.GetName();
-		M1M2ViaLength=ury-lly;
+                M1M2ViaCutCount = via.GetLayerRectsRef()[1].rects_.size();
+                M1M2ViaLength=ury-lly;
                 break;
             }
         } // find m1-m2 via that doesn't conflict with m1 obs
@@ -479,7 +482,8 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
             }
             if(!M1cover) {
                 M1M2ViaName = via.GetName();
-		M1M2ViaLength=ury-lly;
+                M1M2ViaCutCount = via.GetLayerRectsRef()[1].rects_.size();
+                M1M2ViaLength=ury-lly;
                 break;
             }
         } // find m1-m2 via that doesn't conflict with m1 obs
@@ -584,6 +588,24 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
         tmpWire.width = 0;
         tmpWire.viaName = M1M2ViaName;
         Wires.push_back(tmpWire);//M2 to M1 via
+
+        //report via emitted, use PhyDB warning mechanism if single cut used
+        if (verbose_ >= debug) {
+            std::cout << "M1-M2 emitted: " << M1M2ViaName
+                      << " cuts: " << M1M2ViaCutCount
+                      << " instance: " << component.name_
+                      << " supply: " << signal
+                      << " at (" << touchX << ", " << touchY << ") DBU"
+                      << std::endl;
+        }
+        PhyDBWarns(
+            M1M2ViaCutCount == 1,
+            "PWRoute: single-cut M1-M2 fallback"
+                << "; instance: " << component.name_
+                << "; supply: " << signal
+                << "; via: " << M1M2ViaName
+                << "; location: (" << touchX << ", " << touchY << ") DBU"
+                << "; DBU per micron: " << dbuPerMicron);
 
         int zRouteOffset = 0;
         if(signal == "GROUND" && touchX == powerPoint.x &&
