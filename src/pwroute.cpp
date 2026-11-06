@@ -69,6 +69,28 @@ void PWRoute::SetDefaultVia() {
         }
     }
 
+    //for M1-M2 explicitly at the moment 
+    auto &m1m2Vias = layerPair_2_viaIds_.at(std::make_pair(0, 2));
+
+    std::stable_sort(
+        m1m2Vias.begin(),
+        m1m2Vias.end(),
+        [&vias](int firstId, int secondId) {
+            auto &first = vias[firstId].GetLayerRectsRef();
+            auto &second = vias[secondId].GetLayerRectsRef();
+            return first[1].rects_.size() > second[1].rects_.size();
+        });
+
+    if (verbose_ >= debug) {
+        std::cout << "M1-M2 search order:";
+        for (int viaId : m1m2Vias) {
+            std::cout << " " << vias[viaId].GetName();
+        }
+        std::cout << std::endl;
+    }
+    //end of explicity M1-M2
+
+
     for(uint layerid = 0; layerid < layer_v.size(); layerid++) {
         if(layer_v[layerid].GetType() != phydb::LayerType::ROUTING)
             continue;
