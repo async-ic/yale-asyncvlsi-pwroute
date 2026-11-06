@@ -49,6 +49,7 @@ void PWRoute::SetDefaultVia() {
     for (uint viaId = 0; viaId < vias.size(); viaId++) {
         auto &via = vias[viaId];
         auto &shapes = via.GetLayerRectsRef();
+        auto cutCount = shapes[1].rects_.size();//get rects in via layer
         auto *tech = db_ptr_->GetTechPtr();
 
         int lowerId = tech->GetLayerId(shapes[0].layer_name_);
@@ -63,6 +64,7 @@ void PWRoute::SetDefaultVia() {
                       << "-" << shapes[2].layer_name_
                       << ": " << via.GetName()
                       << " [id " << viaId << "]"
+                      << " cuts: " << cutCount
                       << std::endl;
         }
     }
