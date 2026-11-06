@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <math.h>
 #include "pwroute.h"
+#include "pwroute/pwroute.h"
 
 using namespace phydb;
 namespace pwroute {
@@ -40,7 +41,7 @@ void PWRoute::LinkTrackToLayer() {
 }
 
 void PWRoute::SetDefaultVia() {
-    bool debug = false;
+    // bool debug = false;
     auto layer_v = db_ptr_->GetTechPtr()->GetLayersRef();
     auto vias = db_ptr_->GetTechPtr()->GetLefViasRef();
     for(uint layerid = 0; layerid < layer_v.size(); layerid++) {
@@ -61,8 +62,17 @@ void PWRoute::SetDefaultVia() {
         }
         assert(found_lefvia_id != -1);
         topLayerId_2_viaId_[layerid] = found_lefvia_id;
-        if(debug)
-            std::cout << "layerid: " << layerid << " " << found_lefvia_id << std::endl;
+        if(verbose_ >= debug){
+            auto &selected = vias[found_lefvia_id];
+            auto &shapes = selected.GetLayerRectsRef();
+            std::cout << "Default via for " << layer_name
+                      << ": " << selected.GetName()
+                      << " [id " << found_lefvia_id << "]"
+                      << " layers: " << shapes[0].layer_name_
+                      << " " << shapes[1].layer_name_
+                      << " " << shapes[2].layer_name_
+                      << std::endl;
+        }
     }
 }
 
