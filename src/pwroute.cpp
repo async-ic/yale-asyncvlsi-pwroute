@@ -44,6 +44,29 @@ void PWRoute::SetDefaultVia() {
     // bool debug = false;
     auto layer_v = db_ptr_->GetTechPtr()->GetLayersRef();
     auto vias = db_ptr_->GetTechPtr()->GetLefViasRef();
+    layerPair_2_viaIds_.clear();
+
+    for (uint viaId = 0; viaId < vias.size(); viaId++) {
+        auto &via = vias[viaId];
+        auto &shapes = via.GetLayerRectsRef();
+        auto *tech = db_ptr_->GetTechPtr();
+
+        int lowerId = tech->GetLayerId(shapes[0].layer_name_);
+        int upperId = tech->GetLayerId(shapes[2].layer_name_);
+        auto pair = std::make_pair(lowerId, upperId);
+
+        layerPair_2_viaIds_[pair].push_back(viaId);
+
+        if (verbose_ >= debug) {
+            std::cout << "Via candidate for "
+                      << shapes[0].layer_name_
+                      << "-" << shapes[2].layer_name_
+                      << ": " << via.GetName()
+                      << " [id " << viaId << "]"
+                      << std::endl;
+        }
+    }
+
     for(uint layerid = 0; layerid < layer_v.size(); layerid++) {
         if(layer_v[layerid].GetType() != phydb::LayerType::ROUTING)
             continue;

@@ -323,7 +323,9 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
         bool M2cover = false;
         bool V1cover = false; 
         
-        for(int viaIdx = topLayerId_2_viaId_[2]; viaIdx < topLayerId_2_viaId_[4]; viaIdx++) { //vias whose top layer is M2
+        // for(int viaIdx = topLayerId_2_viaId_[2]; viaIdx < topLayerId_2_viaId_[4]; viaIdx++) { //vias whose top layer is M2
+        for (int viaIdx : layerPair_2_viaIds_.at(std::make_pair(0, 2))) {
+
             auto via = vias[viaIdx];
             int llx = -1, lly = -1, urx = -1, ury = -1;
             M1cover = false;
@@ -448,7 +450,9 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
         bool M2cover = false;
         bool V1cover = false; 
         
-        for(int viaIdx = topLayerId_2_viaId_[2]; viaIdx < topLayerId_2_viaId_[4]; viaIdx++) { //vias whose top layer is M2
+        // for(int viaIdx = topLayerId_2_viaId_[2]; viaIdx < topLayerId_2_viaId_[4]; viaIdx++) { //vias whose top layer is M2
+        for (int viaIdx : layerPair_2_viaIds_.at(std::make_pair(0, 2))) {
+
             auto via = vias[viaIdx];
             int llx = -1, lly = -1, urx = -1, ury = -1;
             M1cover = false;

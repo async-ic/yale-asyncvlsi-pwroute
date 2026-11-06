@@ -5,6 +5,7 @@
 #include <phydb/phydb.h> 
 #include "pwroute_component.h"
 #include "pin_edge.h"
+#include <utility>
 using namespace phydb;
 
 #if !defined(uint)
@@ -109,6 +110,7 @@ class PWRoute {
     std::vector<double> layer_min_length_;
     std::map<int, int> layerid_2_trackid_;
     std::map<int, int> topLayerId_2_viaId_;
+    std::map<std::pair<int, int>, std::vector<int>> layerPair_2_viaIds_; //for tracking vias per Mi-Mi-1 pair
 
     std::vector<PWRouteComponent> components_;
 
