@@ -1,9 +1,45 @@
 #include "pwroute.h" 
 #include "pin_edge.h"
+#include <algorithm>
 #include <phydb/common/logging.h>
 #include <math.h>
 using namespace phydb;
 namespace pwroute {
+
+bool PWRoute::PinCoversRect(const std::vector<Rect2D<double>> &pinRects, const Rect2D<double> &viaMetalRect) {
+    std::vector<Rect2D<double>> uncovered{viaMetalRect};
+
+    for (const auto &pinRect : pinRects) {
+        std::vector<Rect2D<double>> nextUncovered;
+        for (const auto &piece : uncovered) {
+            double lx = std::max(piece.ll.x, pinRect.ll.x);
+            double ly = std::max(piece.ll.y, pinRect.ll.y);
+            double ux = std::min(piece.ur.x, pinRect.ur.x);
+            double uy = std::min(piece.ur.y, pinRect.ur.y);
+
+            if (lx >= ux || ly >= uy) {
+                nextUncovered.push_back(piece);
+                continue;
+            }
+            if (piece.ll.y < ly) {
+                nextUncovered.emplace_back(piece.ll.x, piece.ll.y, piece.ur.x, ly);
+            }
+            if (uy < piece.ur.y) {
+                nextUncovered.emplace_back(piece.ll.x, uy, piece.ur.x, piece.ur.y);
+            }
+            if (piece.ll.x < lx) {
+                nextUncovered.emplace_back(piece.ll.x, ly, lx, uy);
+            }
+            if (ux < piece.ur.x) {
+                nextUncovered.emplace_back(ux, ly, piece.ur.x, uy);
+            }
+        }
+        uncovered.swap(nextUncovered);
+    }
+    return uncovered.empty();
+}
+
+
 
 bool PWRoute::M1DetailedRouteSNet(PWRouteComponent& component, std::string signal) {
     std::vector<Rect2D<double>> pinRect;
@@ -328,6 +364,14 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
    
     bool M2thinFail = false;
     bool M2wideFail = false;
+    if (verbose_ >= debug) {
+        for (auto rect : pinRect) {
+            std::cout << "M1 supply pin: " << component.name_
+                      << " supply: " << signal
+                      << " rect: " << rect.Str()
+                      << " DBU" << std::endl;
+        }
+    }
     for(auto pinPoint : trackClosestPinPoint) {
         int trackIdx = pinPoint.first;
         touchX = track.GetStart() + trackIdx * track.GetStep();
@@ -345,9 +389,11 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
         bool V1cover = false; 
         
         // for(int viaIdx = topLayerId_2_viaId_[2]; viaIdx < topLayerId_2_viaId_[4]; viaIdx++) { //vias whose top layer is M2
+        M1M2ViaName.clear();//no via has been selected
         for (int viaIdx : layerPair_2_viaIds_.at(std::make_pair(0, 2))) {
 
             auto via = vias[viaIdx];
+            bool M1pinCovered = true;
             int llx = -1, lly = -1, urx = -1, ury = -1;
             M1cover = false;
             for(auto layerRect : via.GetLayerRectsRef()) {
@@ -356,6 +402,27 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
                     lly = layerRect.rects_[0].ll.y * dbuPerMicron;        
                     urx = layerRect.rects_[0].ur.x * dbuPerMicron;        
                     ury = layerRect.rects_[0].ur.y * dbuPerMicron;        
+                    for (const auto &metalRect : layerRect.rects_) {
+                        Rect2D<double> viaMetalRect(
+                            touchPoint.x + metalRect.ll.x * dbuPerMicron,
+                            touchPoint.y + metalRect.ll.y * dbuPerMicron,
+                            touchPoint.x + metalRect.ur.x * dbuPerMicron,
+                            touchPoint.y + metalRect.ur.y * dbuPerMicron);
+                        bool covered = PinCoversRect(pinRect, viaMetalRect);
+                        if (!covered) {
+                            M1pinCovered = false;
+                        }
+                        if (verbose_ >= debug) {
+                            std::cout << "M1 pin coverage candidate: "
+                                      << via.GetName()
+                                      << " instance: " << component.name_
+                                      << " supply: " << signal
+                                      << " origin: " << touchPoint.Str()
+                                      << " metal: " << viaMetalRect.Str()
+                                      << " DBU covered: " << covered
+                                      << std::endl;
+                        }
+                    }
                 }
             }
             if(llx == -1 || lly == -1 || urx == -1 || ury == -1) {
@@ -384,13 +451,16 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
                           << ", " << touchPoint.y << ") DBU"
                           << std::endl;
             }
-            if (!M1cover && !V1cover) {
+            if (!M1cover && !V1cover && M1pinCovered) {
                 M1M2ViaName = via.GetName();
                 M1M2ViaCutCount = via.GetLayerRectsRef()[1].rects_.size();
                 M1M2ViaLength=ury-lly;
                 break;
             }
         } // find m1-m2 via that doesn't conflict with m1 obs
+        if (M1M2ViaName.empty()) {
+            continue;
+        }
 
         M2wideFail= false;
         M2thinFail = false;
@@ -482,9 +552,11 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
         bool V1cover = false; 
         
         // for(int viaIdx = topLayerId_2_viaId_[2]; viaIdx < topLayerId_2_viaId_[4]; viaIdx++) { //vias whose top layer is M2
+        M1M2ViaName.clear();//no via has been selected
         for (int viaIdx : layerPair_2_viaIds_.at(std::make_pair(0, 2))) {
 
             auto via = vias[viaIdx];
+            bool M1pinCovered = true;
             int llx = -1, lly = -1, urx = -1, ury = -1;
             M1cover = false;
             for(auto layerRect : via.GetLayerRectsRef()) {
@@ -493,6 +565,19 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
                     lly = layerRect.rects_[0].ll.y * dbuPerMicron;        
                     urx = layerRect.rects_[0].ur.x * dbuPerMicron;        
                     ury = layerRect.rects_[0].ur.y * dbuPerMicron;        
+                    for (const auto &metalRect : layerRect.rects_) {
+                        Rect2D<double> viaMetalRect(
+                            touchPoint.x + metalRect.ll.x * dbuPerMicron,
+                            touchPoint.y + metalRect.ll.y * dbuPerMicron,
+                            touchPoint.x + metalRect.ur.x * dbuPerMicron,
+                            touchPoint.y + metalRect.ur.y * dbuPerMicron);
+
+                        bool covered = PinCoversRect(pinRect, viaMetalRect);
+                        if (!covered) {
+                            M1pinCovered = false;
+                        }
+                    }
+
                 }
             }
             
@@ -516,13 +601,16 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
                           << ", " << touchPoint.y << ") DBU"
                           << std::endl;
             }
-            if (!M1cover && !V1cover) {
+            if (!M1cover && !V1cover && M1pinCovered) {
                 M1M2ViaName = via.GetName();
                 M1M2ViaCutCount = via.GetLayerRectsRef()[1].rects_.size();
                 M1M2ViaLength=ury-lly;
                 break;
             }
         } // find m1-m2 via that doesn't conflict with m1 obs
+        if (M1M2ViaName.empty()) {
+            continue;
+        }
 
         M2wideFail= false;
         M2thinFail = false;

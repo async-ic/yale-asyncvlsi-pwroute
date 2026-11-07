@@ -168,6 +168,8 @@ class PWRoute {
     bool OutOfComponent(PWRouteComponent& , int, int, int );
     void ExtractPinEdge(std::string , std::vector<Rect2D<double>>& , PinEdge& );
     bool SameSignalObsBlock(int touchX, int touchY, int h_extend, int v_extend, int M2_spacing, PinEdge& pin_edges);
+    bool PinCoversRect(const std::vector<Rect2D<double>> &pinRects, const Rect2D<double> &viaMetalRect);
+
   public: 
     PWRoute() {}
     PWRoute(phydb::PhyDB* p) : db_ptr_(p){}
