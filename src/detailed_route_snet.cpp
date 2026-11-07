@@ -276,8 +276,27 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
     }
 
 
-    int V1_width = layers[1].GetWidth() * dbuPerMicron;
+    // int V1_width = layers[1].GetWidth() * dbuPerMicron;
+    //go through each cut now that we have multiple ones, compute if blocked
     int V1_spacing = layers[1].GetSpacing() * dbuPerMicron;
+    auto viaCutsBlocked = [&V1obsRect, V1_spacing, dbuPerMicron](const LayerRect &cutLayer, const Point2D<double> &origin){
+        for (const auto &cut : cutLayer.rects_){
+            double lx = origin.x + cut.ll.x * dbuPerMicron;
+            double ly = origin.y + cut.ll.y * dbuPerMicron;
+            double ux = origin.x + cut.ur.x * dbuPerMicron;
+            double uy = origin.y + cut.ur.y * dbuPerMicron;
+
+            for (const auto &obs : V1obsRect){
+                if (lx < obs.ur.x + V1_spacing &&
+                    ux > obs.ll.x - V1_spacing &&
+                    ly < obs.ur.y + V1_spacing &&
+                    uy > obs.ll.y - V1_spacing) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
  
     int M2_minlength = layer_min_length_[2] * dbuPerMicron;
     int M2_pitch = layers[2].GetPitchX() * dbuPerMicron;
@@ -356,7 +375,10 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
                     break;
                 }
             }
-            if(!M1cover) {
+
+            //check cut blocks before rejecting or accepting via candidate
+            V1cover = viaCutsBlocked(via.GetLayerRectsRef()[1], touchPoint);
+            if (!M1cover && !V1cover) {
                 M1M2ViaName = via.GetName();
                 M1M2ViaCutCount = via.GetLayerRectsRef()[1].rects_.size();
                 M1M2ViaLength=ury-lly;
@@ -410,20 +432,20 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
             std::cout << "touchpoint x : " << touchPoint.x << " " << touchPoint.y;
             std::cout << " M2minlength/2: " << M2_minlength / 2 << " component.x: " << component.location_.x << std::endl; 
         }
-
  
-        for(auto rect : V1obsRect) {
-            auto tmpRect = rect;
-            tmpRect.ll.x -= (V1_width / 2 + V1_spacing); 
-            tmpRect.ur.x += (V1_width / 2 + V1_spacing); 
-            tmpRect.ll.y -= (V1_width / 2 + V1_spacing);
-            tmpRect.ur.y += (V1_width / 2 + V1_spacing);
-            
-            if(tmpRect.BoundaryExclusiveCover(touchPoint)) {
-                V1cover = true;
-                break;
-            }
-        }//V1 via spacing
+        // this is now checked while we are choosing a via candidate
+        // for(auto rect : V1obsRect) {
+        //     auto tmpRect = rect;
+        //     tmpRect.ll.x -= (V1_width / 2 + V1_spacing); 
+        //     tmpRect.ur.x += (V1_width / 2 + V1_spacing); 
+        //     tmpRect.ll.y -= (V1_width / 2 + V1_spacing);
+        //     tmpRect.ur.y += (V1_width / 2 + V1_spacing);
+        //
+        //     if(tmpRect.BoundaryExclusiveCover(touchPoint)) {
+        //         V1cover = true;
+        //         break;
+        //     }
+        // }//V1 via spacing
         if(component.name_ == "cx1")
             std::cout << V1cover << M2cover << M1cover << std::endl;
         
@@ -480,7 +502,9 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
                     break;
                 }
             }
-            if(!M1cover) {
+            //check cut blocks before rejecting or accepting via candidate
+            V1cover = viaCutsBlocked(via.GetLayerRectsRef()[1], touchPoint);
+            if (!M1cover && !V1cover) {
                 M1M2ViaName = via.GetName();
                 M1M2ViaCutCount = via.GetLayerRectsRef()[1].rects_.size();
                 M1M2ViaLength=ury-lly;
@@ -536,18 +560,19 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
         }
 
 
-        for(auto rect : V1obsRect) {
-            auto tmpRect = rect;
-            tmpRect.ll.x -= (V1_width / 2 + V1_spacing); 
-            tmpRect.ur.x += (V1_width / 2 + V1_spacing); 
-            tmpRect.ll.y -= (V1_width / 2 + V1_spacing);
-            tmpRect.ur.y += (V1_width / 2 + V1_spacing);
-            
-            if(tmpRect.BoundaryExclusiveCover(touchPoint)) {
-                V1cover = true;
-                break;
-            }
-        }//V1 via spacing
+        //Now we check above
+        // for(auto rect : V1obsRect) {
+        //     auto tmpRect = rect;
+        //     tmpRect.ll.x -= (V1_width / 2 + V1_spacing); 
+        //     tmpRect.ur.x += (V1_width / 2 + V1_spacing); 
+        //     tmpRect.ll.y -= (V1_width / 2 + V1_spacing);
+        //     tmpRect.ur.y += (V1_width / 2 + V1_spacing);
+        //
+        //     if(tmpRect.BoundaryExclusiveCover(touchPoint)) {
+        //         V1cover = true;
+        //         break;
+        //     }
+        // }//V1 via spacing
       
         if(component.name_ == "cx1")
             std::cout << V1cover << M2cover << M1cover << std::endl;
