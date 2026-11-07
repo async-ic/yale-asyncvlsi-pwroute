@@ -378,6 +378,12 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
 
             //check cut blocks before rejecting or accepting via candidate
             V1cover = viaCutsBlocked(via.GetLayerRectsRef()[1], touchPoint);
+            if (verbose_ >= debug && V1cover) {
+                std::cout << "V1 cut obstruction: " << via.GetName()
+                          << " at (" << touchPoint.x
+                          << ", " << touchPoint.y << ") DBU"
+                          << std::endl;
+            }
             if (!M1cover && !V1cover) {
                 M1M2ViaName = via.GetName();
                 M1M2ViaCutCount = via.GetLayerRectsRef()[1].rects_.size();
@@ -504,6 +510,12 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
             }
             //check cut blocks before rejecting or accepting via candidate
             V1cover = viaCutsBlocked(via.GetLayerRectsRef()[1], touchPoint);
+            if (verbose_ >= debug && V1cover) {
+                std::cout << "V1 cut obstruction: " << via.GetName()
+                          << " at (" << touchPoint.x
+                          << ", " << touchPoint.y << ") DBU"
+                          << std::endl;
+            }
             if (!M1cover && !V1cover) {
                 M1M2ViaName = via.GetName();
                 M1M2ViaCutCount = via.GetLayerRectsRef()[1].rects_.size();
