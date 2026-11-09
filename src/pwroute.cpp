@@ -901,8 +901,6 @@ void PWRoute::RouteSNet() {
     //MarkUnusablePoint();
     AdjMeshPointFlag();
     DetailedRouteSNet();
-    if(POWER_UNFOUND != 0 || GROUND_UNFOUND != 0)
-        std::cout << "ATTENTION: SOME CELLS FAIL TO ROUTE!" << std::endl;
     
     //M3CloseViasPad();
 

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <phydb/common/logging.h>
 #include <math.h>
+#include <map>
 using namespace phydb;
 namespace pwroute {
 
@@ -1158,7 +1159,7 @@ void PWRoute::DetailedRouteSNetComp(PWRouteComponent& component) {
         if(!M2power) {
             M1M3power = M1M3DetailedRouteSNet(component, "POWER", powerY, pwgnd_.powerWires, powerPoint); 
             if(!M1M3power)
-                std::cout << "warning: UNABLE TO PATTERN ROUTE POWER: " << component.name_ << std::endl;
+                std::cout << "warning: UNABLE TO PATTERN ROUTE POWER: " << component.name_ << "; cell master: " << component.master_name_ << std::endl;
         }
     }
     M1ground = M1DetailedRouteSNet(component, "GROUND");
@@ -1167,7 +1168,7 @@ void PWRoute::DetailedRouteSNetComp(PWRouteComponent& component) {
         if(!M2ground) {
             M1M3ground = M1M3DetailedRouteSNet(component, "GROUND", gndY, pwgnd_.gndWires, powerPoint); 
             if(!M1M3ground)
-                std::cout << "warning: UNABLE TO PATTERN ROUTE GROUND: " << component.name_ << std::endl;
+                std::cout << "warning: UNABLE TO PATTERN ROUTE GROUND: " << component.name_ << "; cell master: " << component.master_name_ << std::endl;
         }
     }
 
@@ -1254,13 +1255,41 @@ void PWRoute::M2MetalFill(std::string signal) {
 
 
 void PWRoute::DetailedRouteSNet() {
-    for(auto& component : components_) {
+    std::map<std::string, std::pair<int, int>> failedMasters;
+
+    for (auto& component : components_) {
+        int powerBefore = POWER_UNFOUND;
+        int groundBefore = GROUND_UNFOUND;
+
         DetailedRouteSNetComp(component);
+
+        if (POWER_UNFOUND > powerBefore) {
+            failedMasters[component.master_name_].first++;
+        }
+        if (GROUND_UNFOUND > groundBefore) {
+            failedMasters[component.master_name_].second++;
+        }
     }
+
 
     if(verbose_ > none) {
         std::cout << "Power routing completes/fails: " << POWER_FOUND << " / " << POWER_UNFOUND << std::endl;
         std::cout << "Ground routing completes/fails: " << GROUND_FOUND << " / " << GROUND_UNFOUND << std::endl;
+    }
+    if (!failedMasters.empty()) {
+        std::cout << "ATTENTION: SOME CELLS FAIL TO ROUTE!" << std::endl;
+        std::cout << "Cells with failed power/ground pattern routing:" << std::endl;
+        for (const auto& entry : failedMasters) {
+            std::cout << "  " << entry.first
+                      << ": POWER " << entry.second.first
+                      << ", GROUND " << entry.second.second
+                      << std::endl;
+        }
+        std::cout << "Please review the supply-pin layouts of these cells "
+                     "for compatibility with the pattern-routing access."
+                  << std::endl;
+        std::cout << "See individual warnings for affected instances."
+                  << std::endl;
     }
     
     M2MetalFill("POWER");
