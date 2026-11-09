@@ -378,10 +378,10 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
         touchY = pinPoint.second;
         
         //move touchY futher from signalY by width/2
-        if(touchY < signalY)
-            touchY -= M3_width / 2;
-        else
-            touchY += M3_width / 2;
+        // if(touchY < signalY)
+        //     touchY -= M3_width / 2;
+        // else
+        //     touchY += M3_width / 2;
 
         Point2D<double> touchPoint(touchX, touchY);
         bool M1cover = false;
@@ -402,6 +402,19 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
                     lly = layerRect.rects_[0].ll.y * dbuPerMicron;        
                     urx = layerRect.rects_[0].ur.x * dbuPerMicron;        
                     ury = layerRect.rects_[0].ur.y * dbuPerMicron;        
+                  
+                    //lowest and highest M1 offsets from origin
+                    double lowerY = layerRect.rects_[0].ll.y * dbuPerMicron;
+                    double upperY = layerRect.rects_[0].ur.y * dbuPerMicron;
+                    for (const auto &metalRect : layerRect.rects_) {
+                        lowerY = std::min(lowerY, metalRect.ll.y * dbuPerMicron);
+                        upperY = std::max(upperY, metalRect.ur.y * dbuPerMicron);
+                    }
+                    if (pinPoint.second < signalY) {
+                        touchPoint.y = pinPoint.second - upperY;
+                    } else {
+                        touchPoint.y = pinPoint.second - lowerY;
+                    }
                     for (const auto &metalRect : layerRect.rects_) {
                         Rect2D<double> viaMetalRect(
                             touchPoint.x + metalRect.ll.x * dbuPerMicron,
@@ -455,6 +468,7 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
                 M1M2ViaName = via.GetName();
                 M1M2ViaCutCount = via.GetLayerRectsRef()[1].rects_.size();
                 M1M2ViaLength=ury-lly;
+                touchY = touchPoint.y;
                 break;
             }
         } // find m1-m2 via that doesn't conflict with m1 obs
@@ -540,10 +554,10 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
         touchY = pinPoint.second;
         
         //move touchY towards signalY by width/2
-        if(touchY < signalY)
-            touchY += M3_width / 2;
-        else
-            touchY -= M3_width / 2;
+        // if(touchY < signalY)
+        //     touchY += M3_width / 2;
+        // else
+        //     touchY -= M3_width / 2;
 
 
         Point2D<double> touchPoint(touchX, touchY);
@@ -565,6 +579,19 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
                     lly = layerRect.rects_[0].ll.y * dbuPerMicron;        
                     urx = layerRect.rects_[0].ur.x * dbuPerMicron;        
                     ury = layerRect.rects_[0].ur.y * dbuPerMicron;        
+
+                    //lowest and highest M1 offsets from origin
+                    double lowerY = layerRect.rects_[0].ll.y * dbuPerMicron;
+                    double upperY = layerRect.rects_[0].ur.y * dbuPerMicron;
+                    for (const auto &metalRect : layerRect.rects_) {
+                        lowerY = std::min(lowerY, metalRect.ll.y * dbuPerMicron);
+                        upperY = std::max(upperY, metalRect.ur.y * dbuPerMicron);
+                    }
+                    if (pinPoint.second < signalY) {
+                        touchPoint.y = pinPoint.second - lowerY;
+                    } else {
+                        touchPoint.y = pinPoint.second - upperY;
+                    }
                     for (const auto &metalRect : layerRect.rects_) {
                         Rect2D<double> viaMetalRect(
                             touchPoint.x + metalRect.ll.x * dbuPerMicron,
@@ -605,6 +632,7 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
                 M1M2ViaName = via.GetName();
                 M1M2ViaCutCount = via.GetLayerRectsRef()[1].rects_.size();
                 M1M2ViaLength=ury-lly;
+                touchY = touchPoint.y;
                 break;
             }
         } // find m1-m2 via that doesn't conflict with m1 obs
