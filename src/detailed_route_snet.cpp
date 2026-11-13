@@ -334,6 +334,37 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
         }
         return false;
     };
+    //check via M2 obstancles
+    auto viaM2Blocked = [&M2obsRect, &layers, dbuPerMicron](
+    const LayerRect &metalLayer,
+    const Point2D<double> &origin) {
+
+    auto spacingTable = layers[2].GetSpacingTable();
+
+    for (const auto &metal : metalLayer.rects_) {
+        double h = metal.ur.x - metal.ll.x;
+        double v = metal.ur.y - metal.ll.y;
+
+        double spacing1 = spacingTable->GetSpacingFor(h, v);
+        double spacing2 = spacingTable->GetSpacingFor(v, h);
+        double spacing = std::max(spacing1, spacing2) * dbuPerMicron;
+
+        double lx = origin.x + metal.ll.x * dbuPerMicron;
+        double ly = origin.y + metal.ll.y * dbuPerMicron;
+        double ux = origin.x + metal.ur.x * dbuPerMicron;
+        double uy = origin.y + metal.ur.y * dbuPerMicron;
+
+        for (const auto &obs : M2obsRect) {
+            if (lx < obs.ur.x + spacing &&
+                ux > obs.ll.x - spacing &&
+                ly < obs.ur.y + spacing &&
+                uy > obs.ll.y - spacing) { 
+                return true; 
+            }
+        }
+    }
+    return false;
+};
  
     int M2_minlength = layer_min_length_[2] * dbuPerMicron;
     int M2_pitch = layers[2].GetPitchX() * dbuPerMicron;
@@ -466,7 +497,16 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
                           << ", " << touchPoint.y << ") DBU"
                           << std::endl;
             }
-            if (!M1cover && !V1cover && M1pinCovered) {
+            bool M2viaBlocked = viaM2Blocked(via.GetLayerRectsRef()[2], touchPoint);
+            if (verbose_ >= debug && M2viaBlocked) {
+                std::cout << "M2 via obstruction: " << via.GetName()
+                          << " instance: " << component.name_
+                          << " supply: " << signal
+                          << " at (" << touchPoint.x
+                          << ", " << touchPoint.y << ") DBU"
+                          << std::endl;
+            }
+            if (!M1cover && !V1cover && M1pinCovered && !M2viaBlocked) {
                 M1M2ViaName = via.GetName();
                 M1M2ViaCutCount = via.GetLayerRectsRef()[1].rects_.size();
                 M1M2ViaLength=ury-lly;
@@ -633,7 +673,16 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
                           << ", " << touchPoint.y << ") DBU"
                           << std::endl;
             }
-            if (!M1cover && !V1cover && M1pinCovered) {
+            bool M2viaBlocked = viaM2Blocked(via.GetLayerRectsRef()[2], touchPoint);
+            if (verbose_ >= debug && M2viaBlocked) {
+                std::cout << "M2 via obstruction: " << via.GetName()
+                          << " instance: " << component.name_
+                          << " supply: " << signal
+                          << " at (" << touchPoint.x
+                          << ", " << touchPoint.y << ") DBU"
+                          << std::endl;
+            }
+            if (!M1cover && !V1cover && M1pinCovered && !M2viaBlocked) {
                 M1M2ViaName = via.GetName();
                 M1M2ViaCutCount = via.GetLayerRectsRef()[1].rects_.size();
                 M1M2ViaLength=ury-lly;
