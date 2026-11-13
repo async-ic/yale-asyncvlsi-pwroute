@@ -362,6 +362,7 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
     std::string M1M2ViaName;
     std::size_t M1M2ViaCutCount = 0;
     int M1M2ViaLength;
+    int M2wideHalfLength = 0;
    
     bool M2thinFail = false;
     bool M2wideFail = false;
@@ -476,6 +477,9 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
         if (M1M2ViaName.empty()) {
             continue;
         }
+        M2wideHalfLength = std::max(M2_width / 2, M1M2ViaLength / 2);
+        M2wideHalfLength = std::max(M2wideHalfLength, M2_minlength / 6);
+        M2wideHalfLength = (int) FitGrid( M2wideHalfLength, (double) dbuPerMicron * manufacturing_grid);
 
         M2wideFail= false;
         M2thinFail = false;
@@ -499,8 +503,8 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
 
         for(auto rect : M2obsRect) {
             auto tmpRect = rect;
-            tmpRect.ll.x -= (M2_minlength / 6 + M2_spacing); 
-            tmpRect.ur.x += (M2_minlength / 6 + M2_spacing); 
+            tmpRect.ll.x -= (M2wideHalfLength + M2_spacing); 
+            tmpRect.ur.x += (M2wideHalfLength + M2_spacing); 
             tmpRect.ll.y -= (M2_width * 3 / 2 + M2_spacing);
             tmpRect.ur.y += (M2_width * 3 / 2 + M2_spacing);
             
@@ -509,8 +513,8 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
                 break;
             }
         }
-        if(touchPoint.x - M2_minlength / 6 - M2_spacing / 2 < component.location_.x || 
-                touchPoint.x + M2_minlength / 6 + M2_spacing / 2 > component.location_.x + component.size_.x ||
+        if(touchPoint.x - M2wideHalfLength - M2_spacing / 2 < component.location_.x || 
+                touchPoint.x + M2wideHalfLength + M2_spacing / 2 > component.location_.x + component.size_.x ||
                     touchPoint.y - M2_width * 3 / 2 - M2_spacing / 2 < component.location_.y || 
                     touchPoint.y + M2_width * 3 / 2 + M2_spacing / 2 > component.location_.y + component.size_.y) 
             M2wideFail = true;
@@ -640,6 +644,9 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
         if (M1M2ViaName.empty()) {
             continue;
         }
+        M2wideHalfLength = std::max(M2_width / 2, M1M2ViaLength / 2);
+        M2wideHalfLength = std::max(M2wideHalfLength, M2_minlength / 6);
+        M2wideHalfLength = (int) FitGrid( M2wideHalfLength, (double) dbuPerMicron * manufacturing_grid);
 
         M2wideFail= false;
         M2thinFail = false;
@@ -663,8 +670,8 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
         }
         for(auto rect : M2obsRect) {
             auto tmpRect = rect;
-            tmpRect.ll.x -= (M2_minlength / 6 + M2_spacing); 
-            tmpRect.ur.x += (M2_minlength / 6 + M2_spacing); 
+            tmpRect.ll.x -= (M2wideHalfLength + M2_spacing); 
+            tmpRect.ur.x += (M2wideHalfLength + M2_spacing); 
             tmpRect.ll.y -= (M2_width * 3 / 2 + M2_spacing);
             tmpRect.ur.y += (M2_width * 3 / 2 + M2_spacing);
             
@@ -674,8 +681,8 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
             }
         }
         
-        if(touchPoint.x - M2_minlength / 6 - M2_spacing / 2 < component.location_.x || 
-                    touchPoint.x + M2_minlength / 6 + M2_spacing / 2 > component.location_.x + component.size_.x ||
+        if(touchPoint.x - M2wideHalfLength - M2_spacing / 2 < component.location_.x || 
+                    touchPoint.x + M2wideHalfLength + M2_spacing / 2 > component.location_.x + component.size_.x ||
                     touchPoint.y - M2_width * 3 / 2 - M2_spacing / 2 < component.location_.y || 
                     touchPoint.y + M2_width * 3 / 2 + M2_spacing / 2 > component.location_.y + component.size_.y) { 
             M2wideFail = true;            
@@ -846,7 +853,7 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
             tmpWire.width = M2_width;
         }
         else {
-            int length = std::max(std::max(M2_width / 2, M1M2ViaLength / 2), (int) FitGrid(M2_minlength / 6, (double) dbuPerMicron * manufacturing_grid)); //sometimes M2_minlength / 3 < M2_width, too thin 
+            int length = M2wideHalfLength;
             tmpWire.coorX[0] = touchX - length;
             tmpWire.coorX[1] = touchX + length;
             tmpWire.width = 3 * M2_width;
