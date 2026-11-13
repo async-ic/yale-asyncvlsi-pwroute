@@ -369,6 +369,8 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
     int M2_minlength = layer_min_length_[2] * dbuPerMicron;
     int M2_pitch = layers[2].GetPitchX() * dbuPerMicron;
     int M2_width = layers[2].GetWidth() * dbuPerMicron;
+    const int M2thinHalfLength = (int) FitGrid( M2_minlength / 2, (double) dbuPerMicron * manufacturing_grid);
+
     {
        int viaIdx = topLayerId_2_viaId_[detailed_route_layer];//M3
        auto via = vias[viaIdx];
@@ -525,8 +527,8 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
         M2thinFail = false;
         for(auto rect : M2obsRect) {
             auto tmpRect = rect;
-            tmpRect.ll.x -= (M2_minlength / 2 + M2_spacing); 
-            tmpRect.ur.x += (M2_minlength / 2 + M2_spacing); 
+            tmpRect.ll.x -= (M2thinHalfLength + M2_spacing);
+            tmpRect.ur.x += (M2thinHalfLength + M2_spacing);
             tmpRect.ll.y -= (M2_width / 2 + M2_spacing);
             tmpRect.ur.y += (M2_width / 2 + M2_spacing);
             
@@ -535,8 +537,8 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
                 break;
             }
         } // m2 side min area doesn't conflict with m2 obs
-        if(touchPoint.x - M2_minlength / 2 - M2_spacing / 2 < component.location_.x || 
-                touchPoint.x + M2_minlength / 2 + M2_spacing / 2 > component.location_.x + component.size_.x ||
+        if(touchPoint.x - M2thinHalfLength - M2_spacing / 2 < component.location_.x ||
+                touchPoint.x + M2thinHalfLength + M2_spacing / 2 > component.location_.x + component.size_.x ||
                     touchPoint.y - M2_width / 2 - M2_spacing / 2 < component.location_.y || 
                     touchPoint.y + M2_width / 2 + M2_spacing / 2 > component.location_.y + component.size_.y) 
             M2thinFail = true;
@@ -701,8 +703,8 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
         M2thinFail = false;
         for(auto rect : M2obsRect) {
             auto tmpRect = rect;
-            tmpRect.ll.x -= (M2_minlength / 2 + M2_spacing); 
-            tmpRect.ur.x += (M2_minlength / 2 + M2_spacing); 
+            tmpRect.ll.x -= (M2thinHalfLength + M2_spacing);
+            tmpRect.ur.x += (M2thinHalfLength + M2_spacing);
             tmpRect.ll.y -= (M2_width / 2 + M2_spacing);
             tmpRect.ur.y += (M2_width / 2 + M2_spacing);
             
@@ -711,8 +713,8 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
                 break;
             }
         } // m2 side min area doesn't conflict with m2 obs
-        if(touchPoint.x - M2_minlength / 2 - M2_spacing / 2 < component.location_.x || 
-                    touchPoint.x + M2_minlength / 2 + M2_spacing / 2 > component.location_.x + component.size_.x ||
+        if(touchPoint.x - M2thinHalfLength - M2_spacing / 2 < component.location_.x ||
+                    touchPoint.x + M2thinHalfLength + M2_spacing / 2 > component.location_.x + component.size_.x ||
                     touchPoint.y - M2_width / 2 - M2_spacing / 2 < component.location_.y || 
                     touchPoint.y + M2_width / 2 + M2_spacing / 2 > component.location_.y + component.size_.y) {
             M2thinFail = true;
@@ -897,8 +899,8 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
         
         if(pwgnd_.need_m2_minarea) {
 	if(!M2thinFail) {
-            tmpWire.coorX[0] = touchX - (int) FitGrid(M2_minlength / 2, (double) dbuPerMicron * manufacturing_grid);
-            tmpWire.coorX[1] = touchX + (int) FitGrid(M2_minlength / 2, (double) dbuPerMicron * manufacturing_grid);
+            tmpWire.coorX[0] = touchX - M2thinHalfLength;
+            tmpWire.coorX[1] = touchX + M2thinHalfLength;
             tmpWire.width = M2_width;
         }
         else {
