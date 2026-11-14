@@ -40,6 +40,29 @@ void PWRoute::LinkTrackToLayer() {
     }
 }
 
+bool PWRoute::GetViaCutCenterOffset(const LayerRect &cutLayer, Point2D<double> &center) {
+
+    if (cutLayer.rects_.empty()) {
+        return false;
+    }
+
+    double lx = cutLayer.rects_[0].ll.x;
+    double ly = cutLayer.rects_[0].ll.y;
+    double ux = cutLayer.rects_[0].ur.x;
+    double uy = cutLayer.rects_[0].ur.y;
+
+    for (const auto &cut : cutLayer.rects_) {
+        lx = std::min(lx, cut.ll.x);
+        ly = std::min(ly, cut.ll.y);
+        ux = std::max(ux, cut.ur.x);
+        uy = std::max(uy, cut.ur.y);
+    }
+
+    center.x = (lx + ux) / 2.0;
+    center.y = (ly + uy) / 2.0;
+    return true;
+}
+
 void PWRoute::SetDefaultVia() {
     // bool debug = false;
     auto layer_v = db_ptr_->GetTechPtr()->GetLayersRef();
@@ -66,6 +89,22 @@ void PWRoute::SetDefaultVia() {
                       << " [id " << viaId << "]"
                       << " cuts: " << cutCount
                       << std::endl;
+
+            if (center_vias_) {
+                Point2D<double> center;
+
+                if (GetViaCutCenterOffset(shapes[1], center)) {
+                    std::cout << "Via cut center: " << via.GetName()
+                              << " offset: (" << center.x
+                              << ", " << center.y << ") um"
+                              << std::endl;
+                }
+                else {
+                    std::cout << "Invalid via: " << via.GetName()
+                              << " has no cut rectangles"
+                              << std::endl;
+                }
+            }
         }
     }
 
@@ -1040,6 +1079,15 @@ void PWRoute::SetReinforcement(bool use_reinforcement) {
     use_reinforcement_ = use_reinforcement;
     if(verbose_ > 0) 
        std::cout << "use_reinforcement_ set to: " << use_reinforcement_ << std::endl;
+}
+
+void PWRoute::SetCenterVias(bool center_vias) {
+    center_vias_ = center_vias;
+
+    if (verbose_ > none) {
+        std::cout << "center_vias_ set to: "
+                  << center_vias_ << std::endl;
+    }
 }
 
 void PWRoute::RunPWRoute() {

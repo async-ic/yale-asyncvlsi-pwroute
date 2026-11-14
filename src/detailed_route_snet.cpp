@@ -396,7 +396,11 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
     };
 
  
-    auto M2LandingsOverlap = [](const LayerRect &a, const LayerRect &b) {
+    //use the correct frame now that vias may be centered
+    auto M2LandingsOverlap = [dbuPerMicron](
+        const LayerRect &a, const LayerRect &b,
+        const Point2D<double> &centerOffset) {
+
         if (a.rects_.size() != 1 || b.rects_.size() != 1) {
             return false;
         }
@@ -404,8 +408,13 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
         const auto &ra = a.rects_[0];
         const auto &rb = b.rects_[0];
 
-        return ra.ll.x < rb.ur.x && ra.ur.x > rb.ll.x &&
-               ra.ll.y < rb.ur.y && ra.ur.y > rb.ll.y;
+        double dx = centerOffset.x / dbuPerMicron;
+        double dy = centerOffset.y / dbuPerMicron;
+
+        return ra.ll.x - dx < rb.ur.x &&
+               ra.ur.x - dx > rb.ll.x &&
+               ra.ll.y - dy < rb.ur.y &&
+               ra.ur.y - dy > rb.ll.y;
     };
 
     auto &M2M3Via = vias[topLayerId_2_viaId_[detailed_route_layer]];
@@ -445,6 +454,7 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
     double touchX, touchY;
     std::string M1M2ViaName;
     int M1M2ViaIdx = -1;
+    Point2D<double> M1M2ViaOrigin;
     std::size_t M1M2ViaCutCount = 0;
     bool M1M2HasM2MinArea = false;
     bool needM2Pad = pwgnd_.need_m2_minarea;
@@ -482,6 +492,38 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
         for (int viaIdx : layerPair_2_viaIds_.at(std::make_pair(0, 2))) {
 
             auto via = vias[viaIdx];
+                        Point2D<double> centerOffset(0, 0);
+
+            if (center_vias_) {
+                Point2D<double> centerMicrons;
+
+                if (!GetViaCutCenterOffset(
+                        via.GetLayerRectsRef()[1], centerMicrons)) {
+                    continue;
+                }
+                double dx = centerMicrons.x * dbuPerMicron;
+                double dy = centerMicrons.y * dbuPerMicron;
+                double grid = manufacturing_grid * dbuPerMicron;
+
+                bool onDBU = fabs(dx - round(dx)) < 1e-6 && fabs(dy - round(dy)) < 1e-6;
+
+                bool onGrid = grid <= 0 ||
+                    (fabs(dx / grid - round(dx / grid)) < 1e-6 &&
+                     fabs(dy / grid - round(dy / grid)) < 1e-6);
+
+                if (!onDBU || !onGrid) {
+                    if (verbose_ >= debug) {
+                        std::cout << "Via center cannot be represented "
+                                  << "on the placement grid: "
+                                  << via.GetName() << std::endl;
+                    }
+                    continue;
+                }
+                centerOffset.x = round(dx);
+                centerOffset.y = round(dy);
+            }
+            touchPoint.x = touchX - centerOffset.x;
+
             bool M1pinCovered = true;
             int llx = -1, lly = -1, urx = -1, ury = -1;
             M1cover = false;
@@ -565,6 +607,9 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
             if (!M1cover && !V1cover && M1pinCovered && !M2viaBlocked) {
                 M1M2ViaName = via.GetName();
                 M1M2ViaIdx = viaIdx;
+                M1M2ViaOrigin = touchPoint;
+                touchPoint.x = touchX;
+                touchPoint.y += centerOffset.y;
                 M1M2HasM2MinArea = M2MetalHasMinArea(via.GetLayerRectsRef()[2]);
                 bool usesZRoute =
                     signal == "GROUND" && touchPoint.x == powerPoint.x &&
@@ -572,7 +617,7 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
                      (touchPoint.y > signalY && powerPoint.y < touchPoint.y));
 
                 bool connectedM2 = !usesZRoute &&
-                    M2LandingsOverlap(via.GetLayerRectsRef()[2], M2M3Metal);
+                    M2LandingsOverlap(via.GetLayerRectsRef()[2], M2M3Metal, centerOffset);
 
                 needM2Pad = pwgnd_.need_m2_minarea && !(M1M2HasM2MinArea && connectedM2);
                 M1M2ViaCutCount = via.GetLayerRectsRef()[1].rects_.size();
@@ -682,6 +727,38 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
         for (int viaIdx : layerPair_2_viaIds_.at(std::make_pair(0, 2))) {
 
             auto via = vias[viaIdx];
+                        Point2D<double> centerOffset(0, 0);
+
+            if (center_vias_) {
+                Point2D<double> centerMicrons;
+
+                if (!GetViaCutCenterOffset(via.GetLayerRectsRef()[1], centerMicrons)) {
+                    continue;
+                }
+
+                double dx = centerMicrons.x * dbuPerMicron;
+                double dy = centerMicrons.y * dbuPerMicron;
+                double grid = manufacturing_grid * dbuPerMicron;
+
+                bool onDBU = fabs(dx - round(dx)) < 1e-6 && fabs(dy - round(dy)) < 1e-6;
+
+                bool onGrid = grid <= 0 ||
+                    (fabs(dx / grid - round(dx / grid)) < 1e-6 &&
+                     fabs(dy / grid - round(dy / grid)) < 1e-6);
+
+                if (!onDBU || !onGrid) {
+                    if (verbose_ >= debug) {
+                        std::cout << "Via center cannot be represented "
+                                  << "on the placement grid: "
+                                  << via.GetName() << std::endl;
+                    }
+                    continue;
+                }
+                centerOffset.x = round(dx);
+                centerOffset.y = round(dy);
+            }
+            touchPoint.x = touchX - centerOffset.x;
+
             bool M1pinCovered = true;
             int llx = -1, lly = -1, urx = -1, ury = -1;
             M1cover = false;
@@ -752,6 +829,9 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
             if (!M1cover && !V1cover && M1pinCovered && !M2viaBlocked) {
                 M1M2ViaName = via.GetName();
                 M1M2ViaIdx = viaIdx;
+                M1M2ViaOrigin = touchPoint;
+                touchPoint.x = touchX;
+                touchPoint.y += centerOffset.y;
                 M1M2HasM2MinArea = M2MetalHasMinArea(via.GetLayerRectsRef()[2]);
                 bool usesZRoute =
                     signal == "GROUND" && touchPoint.x == powerPoint.x &&
@@ -759,7 +839,7 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
                      (touchPoint.y > signalY && powerPoint.y < touchPoint.y));
 
                 bool connectedM2 = !usesZRoute &&
-                    M2LandingsOverlap(via.GetLayerRectsRef()[2], M2M3Metal);
+                    M2LandingsOverlap(via.GetLayerRectsRef()[2], M2M3Metal, centerOffset);
 
                 needM2Pad = pwgnd_.need_m2_minarea && !(M1M2HasM2MinArea && connectedM2);
                 M1M2ViaCutCount = via.GetLayerRectsRef()[1].rects_.size();
@@ -871,8 +951,8 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
             }
         }
    
-        tmpWire.coorX[0] = touchX;
-        tmpWire.coorY[0] = touchY;
+        tmpWire.coorX[0] = M1M2ViaOrigin.x;
+        tmpWire.coorY[0] = M1M2ViaOrigin.y;
         tmpWire.numPathPoint = 1;
         tmpWire.layerName = layers[2].GetName();
         tmpWire.width = 0;
@@ -890,7 +970,7 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
                       << " cuts: " << M1M2ViaCutCount
                       << " instance: " << component.name_
                       << " supply: " << signal
-                      << " at (" << touchX << ", " << touchY << ") DBU"
+                      << " at (" << M1M2ViaOrigin.x << ", " << M1M2ViaOrigin.y << ") DBU"
                       << std::endl;
         }
         PhyDBWarns(
@@ -899,7 +979,7 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
                 << "; instance: " << component.name_
                 << "; supply: " << signal
                 << "; via: " << M1M2ViaName
-                << "; location: (" << touchX << ", " << touchY << ") DBU"
+                << "; location: (" << M1M2ViaOrigin.x << ", " << M1M2ViaOrigin.y << ") DBU"
                 << "; DBU per micron: " << dbuPerMicron);
 
         int zRouteOffset = 0;

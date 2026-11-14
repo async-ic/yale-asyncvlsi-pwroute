@@ -117,6 +117,8 @@ class PWRoute {
     std::vector<PWRouteComponent> components_;
 
     PWGND pwgnd_;
+    bool center_vias_ = false;
+
 
     int POWER_FOUND = 0;
     int POWER_UNFOUND = 0;
@@ -172,6 +174,8 @@ class PWRoute {
     void ExtractPinEdge(std::string , std::vector<Rect2D<double>>& , PinEdge& );
     bool SameSignalObsBlock(int touchX, int touchY, int h_extend, int v_extend, int M2_spacing, PinEdge& pin_edges);
     bool PinCoversRect(const std::vector<Rect2D<double>> &pinRects, const Rect2D<double> &viaMetalRect);
+    bool GetViaCutCenterOffset(const LayerRect &cutLayer, Point2D<double> &center);
+
 
   public: 
     PWRoute() {}
@@ -182,6 +186,7 @@ class PWRoute {
 
     void SetMeshWidthStep(int, int, int);
     void SetReinforcement(bool ); 
+    void SetCenterVias(bool center_vias);
     void RunPWRoute();
     void ExportToPhyDB();
 
