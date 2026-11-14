@@ -84,6 +84,8 @@ public:
     bool use_adj_mesh_point_flag_;
     std::set<Point2D<int>> powerM2Points;
     std::set<Point2D<int>> gndM2Points;
+    std::vector<Rect2D<double>> powerM2Rects;
+    std::vector<Rect2D<double>> gndM2Rects;
 };
 
 
@@ -144,6 +146,7 @@ class PWRoute {
     void MarkUnusablePointComp(PWRouteComponent& component);
     void FindRowSNet(std::string componentName, std::string pinName, Rect2D<double> rect, int& powerY, int& gndY);
     void DetailedRouteSNet();
+    void RecordM2Metal(const LayerRect &metalLayer, const Point2D<double> &origin, std::vector<Rect2D<double>> &rects);
     void DetailedRouteSNetComp(PWRouteComponent& component);
     bool M2DetailedRouteSNet(PWRouteComponent& component, std::string signal, int signalY, 
         std::vector<Wire>& Wires, Point2D<int>& powerPoint);

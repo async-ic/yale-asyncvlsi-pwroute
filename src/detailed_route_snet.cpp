@@ -335,7 +335,7 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
         return false;
     };
     //check via M2 obstancles
-    auto viaM2Blocked = [&M2obsRect, &layers, dbuPerMicron](
+    auto viaM2Blocked = [this, &M2obsRect, &layers, dbuPerMicron](
     const LayerRect &metalLayer,
     const Point2D<double> &origin) {
 
@@ -354,14 +354,30 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
         double ux = origin.x + metal.ur.x * dbuPerMicron;
         double uy = origin.y + metal.ur.y * dbuPerMicron;
 
-        for (const auto &obs : M2obsRect) {
-            if (lx < obs.ur.x + spacing &&
-                ux > obs.ll.x - spacing &&
-                ly < obs.ur.y + spacing &&
-                uy > obs.ll.y - spacing) { 
-                return true; 
+        //check cell obstacles AND obstacles from placed vias
+        auto blockedBy = [&](const std::vector<Rect2D<double>> &obstacles) {
+            for (const auto &obs : obstacles) {
+                if (lx < obs.ur.x + spacing &&
+                    ux > obs.ll.x - spacing &&
+                    ly < obs.ur.y + spacing &&
+                    uy > obs.ll.y - spacing) {
+                    return true;
+                }
             }
+            return false;
+        };
+        if (blockedBy(M2obsRect)) {
+            return true;
         }
+        if (blockedBy(pwgnd_.powerM2Rects) || blockedBy(pwgnd_.gndM2Rects)) {
+            if (verbose_ >= debug) {
+                std::cout << "Generated M2 obstruction at ("
+                          << origin.x << ", " << origin.y
+                          << ") DBU" << std::endl;
+            }
+            return true;
+        }
+
     }
     return false;
 };
@@ -428,6 +444,7 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
     bool foundM1M3 = false;
     double touchX, touchY;
     std::string M1M2ViaName;
+    int M1M2ViaIdx = -1;
     std::size_t M1M2ViaCutCount = 0;
     bool M1M2HasM2MinArea = false;
     bool needM2Pad = pwgnd_.need_m2_minarea;
@@ -547,6 +564,7 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
             }
             if (!M1cover && !V1cover && M1pinCovered && !M2viaBlocked) {
                 M1M2ViaName = via.GetName();
+                M1M2ViaIdx = viaIdx;
                 M1M2HasM2MinArea = M2MetalHasMinArea(via.GetLayerRectsRef()[2]);
                 bool usesZRoute =
                     signal == "GROUND" && touchPoint.x == powerPoint.x &&
@@ -733,6 +751,7 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
             }
             if (!M1cover && !V1cover && M1pinCovered && !M2viaBlocked) {
                 M1M2ViaName = via.GetName();
+                M1M2ViaIdx = viaIdx;
                 M1M2HasM2MinArea = M2MetalHasMinArea(via.GetLayerRectsRef()[2]);
                 bool usesZRoute =
                     signal == "GROUND" && touchPoint.x == powerPoint.x &&
@@ -831,6 +850,8 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
 
     if(foundM1M3) {
         Wire tmpWire;
+        auto &placedM2Rects = (signal == "POWER") ? pwgnd_.powerM2Rects : pwgnd_.gndM2Rects;
+
         
         if(signal == "POWER") { 
             powerPoint.x = touchX;
@@ -857,6 +878,11 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
         tmpWire.width = 0;
         tmpWire.viaName = M1M2ViaName;
         Wires.push_back(tmpWire);//M2 to M1 via
+        RecordM2Metal(vias[M1M2ViaIdx].GetLayerRectsRef()[2], //record M2 from placed via
+                      Point2D<double>(tmpWire.coorX[0], 
+                      tmpWire.coorY[0]),
+                      placedM2Rects);
+
 
         //report via emitted, use PhyDB warning mechanism if single cut used
         if (verbose_ >= debug) {
@@ -953,6 +979,7 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
         tmpWire.width = 0;
         tmpWire.viaName = vias[viaID].GetName();
         Wires.push_back(tmpWire);//M3 to M2 via, touch
+
         
         if (needM2Pad) {
 	if(!M2thinFail) {
@@ -1255,6 +1282,29 @@ bool PWRoute::M2DetailedRouteSNet(PWRouteComponent& component, std::string signa
 
 }
 
+void PWRoute::RecordM2Metal(const LayerRect &metalLayer, const Point2D<double> &origin, std::vector<Rect2D<double>> &rects){
+    double dbuPerMicron = db_ptr_->GetDesignPtr()->GetUnitsDistanceMicrons();
+
+    for (const auto &metal : metalLayer.rects_) {
+        rects.emplace_back(
+            origin.x + metal.ll.x * dbuPerMicron,
+            origin.y + metal.ll.y * dbuPerMicron,
+            origin.x + metal.ur.x * dbuPerMicron,
+            origin.y + metal.ur.y * dbuPerMicron);
+
+        if (verbose_ >= debug) {
+        const auto &placed = rects.back();
+            std::cout << "M2 recorded: layer: " << metalLayer.layer_name_
+                      << " origin: (" << origin.x << ", " << origin.y << ")"
+                      << " rect: (" << placed.ll.x << ", " << placed.ll.y
+                      << ")(" << placed.ur.x << ", " << placed.ur.y << ")"
+                      << " DBU; stored: " << rects.size()
+                      << std::endl;
+        }
+    }
+}
+
+
 void PWRoute::DetailedRouteSNetComp(PWRouteComponent& component) {
     int powerY, gndY;
     if(component.pins_.size() != 0) {
@@ -1370,6 +1420,9 @@ void PWRoute::M2MetalFill(std::string signal) {
 
 
 void PWRoute::DetailedRouteSNet() {
+    pwgnd_.powerM2Rects.clear();
+    pwgnd_.gndM2Rects.clear();
+
     std::map<std::string, std::pair<int, int>> failedMasters;
 
     for (auto& component : components_) {
