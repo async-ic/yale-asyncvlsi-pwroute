@@ -107,27 +107,32 @@ void PWRoute::SetDefaultVia() {
             }
         }
     }
+    
+    //for M1-M2,M2-M3 explicitly at the moment 
+    //we can sort all the metals at one but the metal checks also have to be 
+    //expanded. Doing the explicity vias as a measure of "austerity" at the moment.
+    for (const auto &pair : {std::make_pair(0, 2), std::make_pair(2, 4)}) {
 
-    //for M1-M2 explicitly at the moment 
-    auto &m1m2Vias = layerPair_2_viaIds_.at(std::make_pair(0, 2));
+        auto &pairVias = layerPair_2_viaIds_.at(pair);
 
-    std::stable_sort(
-        m1m2Vias.begin(),
-        m1m2Vias.end(),
-        [&vias](int firstId, int secondId) {
-            auto &first = vias[firstId].GetLayerRectsRef();
-            auto &second = vias[secondId].GetLayerRectsRef();
-            return first[1].rects_.size() > second[1].rects_.size();
-        });
+        std::stable_sort( pairVias.begin(), pairVias.end(), [&vias](int firstId, int secondId) {
+                auto &first = vias[firstId].GetLayerRectsRef();
+                auto &second = vias[secondId].GetLayerRectsRef();
+                return first[1].rects_.size() > second[1].rects_.size();
+            });
 
-    if (verbose_ >= debug) {
-        std::cout << "M1-M2 search order:";
-        for (int viaId : m1m2Vias) {
-            std::cout << " " << vias[viaId].GetName();
+        if (verbose_ >= debug) {
+            std::cout << layer_v[pair.first].GetName()
+                      << "-" << layer_v[pair.second].GetName()
+                      << " search order:";
+
+            for (int viaId : pairVias) {
+                std::cout << " " << vias[viaId].GetName();
+            }
+            std::cout << std::endl;
         }
-        std::cout << std::endl;
     }
-    //end of explicity M1-M2
+    //end of explicity sorting
 
 
     for(uint layerid = 0; layerid < layer_v.size(); layerid++) {
