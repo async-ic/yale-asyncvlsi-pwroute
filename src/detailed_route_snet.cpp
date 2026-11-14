@@ -587,6 +587,10 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
                 }
             }
 
+            if (M1cover || !M1pinCovered) {
+                continue;
+            }
+
             //check cut blocks before rejecting or accepting via candidate
             V1cover = viaCutsBlocked(via.GetLayerRectsRef()[1], touchPoint);
             if (verbose_ >= debug && V1cover) {
@@ -809,6 +813,11 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
                     break;
                 }
             }
+
+            if (M1cover || !M1pinCovered) {
+                continue;
+            }
+
             //check cut blocks before rejecting or accepting via candidate
             V1cover = viaCutsBlocked(via.GetLayerRectsRef()[1], touchPoint);
             if (verbose_ >= debug && V1cover) {
