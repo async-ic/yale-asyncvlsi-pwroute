@@ -15,6 +15,23 @@ struct PWRoute::DetailedRouteIndexes {
     PlacedRectIndex powerM2;
     PlacedRectIndex gndM2;
     double maxM2Spacing = 0.0;//DBU
+    std::vector<Rect2D<double>> placedV2Cuts;
+    PlacedRectIndex v2Cuts;
+
+    //no same supply exception so we can collect the generated pwr and gnd V2 cuts here
+    void recordV2Cuts(const LayerRect& cuts, const Point2D<double>& origin, int dbuPerMicron) {
+        using Point = PlacedRectIndex::Point;
+        using Box = PlacedRectIndex::Box;
+        for (const auto& cut : cuts.rects_) {
+            Rect2D<double> rect(
+                origin.x + cut.ll.x * dbuPerMicron,
+                origin.y + cut.ll.y * dbuPerMicron,
+                origin.x + cut.ur.x * dbuPerMicron,
+                origin.y + cut.ur.y * dbuPerMicron);
+            v2Cuts.insert(Box(Point(rect.ll.x, rect.ll.y), Point(rect.ur.x, rect.ur.y)), placedV2Cuts.size());
+            placedV2Cuts.push_back(rect);
+        }
+    }
 
     //no same supply exception so we can collect the generated pwr and gnd M2 metals here
     bool generatedM2Blocked(
@@ -262,7 +279,7 @@ bool PWRoute::AdjMeshPointCheck(int x, int y, int track_step) {
 }
 
 bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string signal, int signalY,
-    std::vector<Wire>& Wires, Point2D<int>& powerPoint, const DetailedRouteIndexes& indexes) {
+    std::vector<Wire>& Wires, Point2D<int>& powerPoint, DetailedRouteIndexes& indexes) {
     
     std::vector<Rect2D<double>> M2obsRect;
     std::vector<Rect2D<double>> M3obsRect;
@@ -1494,6 +1511,8 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
         tmpWire.width = 0;
         tmpWire.viaName = vias[viaID].GetName();
         Wires.push_back(tmpWire);//M3 to M2 via, touch
+        indexes.recordV2Cuts(vias[M2M3ViaIdx].GetLayerRectsRef()[1], //record V2 cut
+                           M2M3ViaOrigin, dbuPerMicron);
         RecordViaMetal(vias[M2M3ViaIdx].GetLayerRectsRef()[0], //record via M2 metal
                M2M3ViaOrigin,
                placedM2Rects);
@@ -1573,7 +1592,7 @@ bool PWRoute::OutOfComponent(PWRouteComponent& component, int touchX, int touchY
 }
 
 bool PWRoute::M2DetailedRouteSNet(PWRouteComponent& component, std::string signal, int signalY, std::vector<Wire>& Wires, Point2D<int>& powerPoint,
-    const DetailedRouteIndexes& indexes) {
+    DetailedRouteIndexes& indexes) {
     std::vector<Rect2D<double>> pinRect;
     std::vector<Rect2D<double>> obsRect;
     std::vector<Rect2D<double>> M3obsRect;
@@ -2183,6 +2202,8 @@ bool PWRoute::M2DetailedRouteSNet(PWRouteComponent& component, std::string signa
             tmpWire.viaName = vias[viaID].GetName();
             Wires.push_back(tmpWire);
         }
+        indexes.recordV2Cuts(vias[selectedViaIdx].GetLayerRectsRef()[1],
+                           selectedViaOrigin, dbuPerMicron);
         RecordViaMetal(vias[selectedViaIdx].GetLayerRectsRef()[0],
                        selectedViaOrigin,
                        placedM2Rects);

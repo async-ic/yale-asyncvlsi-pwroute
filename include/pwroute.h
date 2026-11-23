@@ -159,11 +159,11 @@ class PWRoute {
     struct DetailedRouteIndexes;
     void DetailedRouteSNetComp(PWRouteComponent& component, DetailedRouteIndexes& indexes);
     bool M2DetailedRouteSNet(PWRouteComponent& component, std::string signal, int signalY, std::vector<Wire>& Wires, Point2D<int>& powerPoint,
-        const DetailedRouteIndexes& indexes);
+        DetailedRouteIndexes& indexes);
     void PlaceHighLayerVias(std::vector<Wire>& wires, int X, int Y, 
         std::string topLayerName, int viaIdx, int length, int viaDistance);
     bool M1M3DetailedRouteSNet(PWRouteComponent& component, std::string signal, int signalY, std::vector<Wire>& Wires, Point2D<int>& powerPoint,
-        const DetailedRouteIndexes& indexes);
+        DetailedRouteIndexes& indexes);
 
     void findClosestTouchPoints(std::vector<Rect2D<double>>& rects, std::map<int, int>& closestPoint, 
         Track track, int expand, int signalY);
