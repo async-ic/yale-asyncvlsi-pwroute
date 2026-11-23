@@ -1549,8 +1549,8 @@ bool PWRoute::OutOfComponent(PWRouteComponent& component, int touchX, int touchY
 
 }
 
-bool PWRoute::M2DetailedRouteSNet(PWRouteComponent& component, std::string signal, int signalY, 
-        std::vector<Wire>& Wires, Point2D<int>& powerPoint) {
+bool PWRoute::M2DetailedRouteSNet(PWRouteComponent& component, std::string signal, int signalY, std::vector<Wire>& Wires, Point2D<int>& powerPoint,
+    const DetailedRouteIndexes& indexes) {
     std::vector<Rect2D<double>> pinRect;
     std::vector<Rect2D<double>> obsRect;
     std::vector<Rect2D<double>> M3obsRect;
@@ -1718,8 +1718,17 @@ bool PWRoute::M2DetailedRouteSNet(PWRouteComponent& component, std::string signa
    auto generatedM3Blocked = [&](const Rect2D<double> &candidate, double candidateSpacing, const Rect2D<double> *connectingWire = nullptr) -> bool {
         auto spacingTable = layers[4].GetSpacingTable();
 
-        auto blockedBy = [&](const std::vector<Rect2D<double>> &obstacles, bool sameSupply) -> bool {
-            for (const auto &obs : obstacles) {
+        //use boost r tree machinery
+        using Point = PlacedRectIndex::Point;
+        using Box = PlacedRectIndex::Box;
+        const double margin = std::max(candidateSpacing, indexes.maxM3Spacing);
+        const Box searchWindow(
+            Point(candidate.ll.x - margin, candidate.ll.y - margin),
+            Point(candidate.ur.x + margin, candidate.ur.y + margin));
+
+        auto blockedBy = [&](const std::vector<Rect2D<double>>& obstacles,const PlacedRectIndex& index, bool sameSupply) -> bool {
+            for (auto id : index.intersecting(searchWindow)) {
+                const auto& obs = obstacles[id];
                 double overlapX = std::min(candidate.ur.x, obs.ur.x) - std::max(candidate.ll.x, obs.ll.x);
                 double overlapY = std::min(candidate.ur.y, obs.ur.y) - std::max(candidate.ll.y, obs.ll.y);
 
@@ -1774,8 +1783,8 @@ bool PWRoute::M2DetailedRouteSNet(PWRouteComponent& component, std::string signa
             }
             return false;
         };
-        return blockedBy(pwgnd_.powerM3Rects, signal == "POWER") ||
-               blockedBy(pwgnd_.gndM3Rects, signal == "GROUND");
+        return blockedBy(pwgnd_.powerM3Rects, indexes.powerM3, signal == "POWER") ||
+               blockedBy(pwgnd_.gndM3Rects, indexes.gndM3, signal == "GROUND");
     };
 
    auto viaM3Blocked = [&M3obsRect, &layers, &generatedM3Blocked, dbuPerMicron](
@@ -2269,7 +2278,7 @@ void PWRoute::DetailedRouteSNetComp(PWRouteComponent& component, DetailedRouteIn
     const auto firstPowerM3 = pwgnd_.powerM3Rects.size();
     M1power = M1DetailedRouteSNet(component, "POWER");
     if(!M1power) {
-        M2power = M2DetailedRouteSNet(component, "POWER", powerY, pwgnd_.powerWires, powerPoint);
+        M2power = M2DetailedRouteSNet(component, "POWER", powerY, pwgnd_.powerWires, powerPoint, indexes);
         if(!M2power) {
             M1M3power = M1M3DetailedRouteSNet(component, "POWER", powerY, pwgnd_.powerWires, powerPoint, indexes);
             if(!M1M3power)
@@ -2281,7 +2290,7 @@ void PWRoute::DetailedRouteSNetComp(PWRouteComponent& component, DetailedRouteIn
     const auto firstGndM3 = pwgnd_.gndM3Rects.size();
     M1ground = M1DetailedRouteSNet(component, "GROUND");
     if(!M1ground) {
-        M2ground = M2DetailedRouteSNet(component, "GROUND", gndY, pwgnd_.gndWires, powerPoint);
+        M2ground = M2DetailedRouteSNet(component, "GROUND", gndY, pwgnd_.gndWires, powerPoint, indexes);
         if(!M2ground) {
             M1M3ground = M1M3DetailedRouteSNet(component, "GROUND", gndY, pwgnd_.gndWires, powerPoint, indexes);
             if(!M1M3ground)
