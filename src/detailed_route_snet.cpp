@@ -18,20 +18,54 @@ struct PWRoute::DetailedRouteIndexes {
     std::vector<Rect2D<double>> placedV2Cuts;
     PlacedRectIndex v2Cuts;
 
+    static Rect2D<double> placedCutRect(const Rect2D<double>& cut, const Point2D<double>& origin, int dbuPerMicron) {
+        return Rect2D<double>(
+            origin.x + cut.ll.x * dbuPerMicron,
+            origin.y + cut.ll.y * dbuPerMicron,
+            origin.x + cut.ur.x * dbuPerMicron,
+            origin.y + cut.ur.y * dbuPerMicron);
+    }
+
     //no same supply exception so we can collect the generated pwr and gnd V2 cuts here
     void recordV2Cuts(const LayerRect& cuts, const Point2D<double>& origin, int dbuPerMicron) {
         using Point = PlacedRectIndex::Point;
         using Box = PlacedRectIndex::Box;
         for (const auto& cut : cuts.rects_) {
-            Rect2D<double> rect(
-                origin.x + cut.ll.x * dbuPerMicron,
-                origin.y + cut.ll.y * dbuPerMicron,
-                origin.x + cut.ur.x * dbuPerMicron,
-                origin.y + cut.ur.y * dbuPerMicron);
+            const auto rect = placedCutRect(cut, origin, dbuPerMicron);
             v2Cuts.insert(Box(Point(rect.ll.x, rect.ll.y), Point(rect.ur.x, rect.ur.y)), placedV2Cuts.size());
             placedV2Cuts.push_back(rect);
         }
     }
+
+    bool v2Blocked(const LayerRect& cuts, const Point2D<double>& origin, const std::vector<Rect2D<double>>& localCuts,
+        int spacing, int dbuPerMicron) const {
+        using Point = PlacedRectIndex::Point;
+        using Box = PlacedRectIndex::Box;
+
+        for (const auto& cut : cuts.rects_) {
+            const auto rect = placedCutRect(cut, origin, dbuPerMicron);
+            auto blocks = [&](const Rect2D<double>& obs) {
+                return rect.ll.x < obs.ur.x + spacing &&
+                       rect.ur.x > obs.ll.x - spacing &&
+                       rect.ll.y < obs.ur.y + spacing &&
+                       rect.ur.y > obs.ll.y - spacing;
+            };
+            for (const auto& obs : localCuts) {
+                if (blocks(obs)) {
+                    return true;
+                }
+            }
+            const Box searchWindow(Point(rect.ll.x - spacing, rect.ll.y - spacing), Point(rect.ur.x + spacing, rect.ur.y + spacing));
+            for (auto id : v2Cuts.intersecting(searchWindow)) {
+                if (blocks(placedV2Cuts[id])) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+
 
     //no same supply exception so we can collect the generated pwr and gnd M2 metals here
     bool generatedM2Blocked(
@@ -933,7 +967,7 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
                 origin.x -= round(dx);
                 origin.y -= round(dy);
             }
-            if (viaCutsBlocked(shapes[1], origin, V2obsRect, V2_spacing)) {
+            if (indexes.v2Blocked(shapes[1], origin, V2obsRect, V2_spacing, dbuPerMicron)) {
                 continue;
             }
             const auto &upperMetal = shapes[0];
@@ -1658,26 +1692,6 @@ bool PWRoute::M2DetailedRouteSNet(PWRouteComponent& component, std::string signa
     if(pinRect.size() == 0)
         return false;
 
-    auto viaCutsBlocked = [dbuPerMicron](
-        const LayerRect &cutLayer, const Point2D<double> &origin,
-        const std::vector<Rect2D<double>> &obstacles, int spacing) {
-        for (const auto &cut : cutLayer.rects_) {
-            double lx = origin.x + cut.ll.x * dbuPerMicron;
-            double ly = origin.y + cut.ll.y * dbuPerMicron;
-            double ux = origin.x + cut.ur.x * dbuPerMicron;
-            double uy = origin.y + cut.ur.y * dbuPerMicron;
-
-            for (const auto &obs : obstacles) {
-                if (lx < obs.ur.x + spacing &&
-                    ux > obs.ll.x - spacing &&
-                    ly < obs.ur.y + spacing &&
-                    uy > obs.ll.y - spacing) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    };
     //return true if master fits the landing
     auto viaM2PinCovered = [&](int candidateViaIdx, const Point2D<double> &origin) -> bool {
         const auto &metalLayer = vias[candidateViaIdx].GetLayerRectsRef()[0];
@@ -2060,7 +2074,7 @@ bool PWRoute::M2DetailedRouteSNet(PWRouteComponent& component, std::string signa
             if (usesZ && directM2WireBlocked(makeDirectM2BridgeWire(x, routeY, zOffset))) {
                 continue;
             }
-            if (viaCutsBlocked(shapes[1], origin, V2obsRect, V2_spacing)) {
+            if (indexes.v2Blocked(shapes[1], origin, V2obsRect, V2_spacing, dbuPerMicron)) {
                 if (verbose_ >= debug) {
                     std::cout << "Direct V2 cut obstruction:"
                               << " instance: " << component.name_
