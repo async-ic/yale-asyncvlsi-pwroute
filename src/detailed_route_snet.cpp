@@ -12,6 +12,45 @@ struct PWRoute::DetailedRouteIndexes {
     PlacedRectIndex powerM3;
     PlacedRectIndex gndM3;
     double maxM3Spacing = 0.0;//DBU
+    PlacedRectIndex powerM2;
+    PlacedRectIndex gndM2;
+    double maxM2Spacing = 0.0;//DBU
+
+    //no same supply exception so we can collect the generated pwr and gnd M2 metals here
+    bool generatedM2Blocked(
+        const Rect2D<double>& candidate, double candidateSpacing,
+        const std::vector<Rect2D<double>>& powerRects,
+        const std::vector<Rect2D<double>>& gndRects,
+        const phydb::SpacingTable* spacingTable,
+        int dbuPerMicron) const {
+
+        using Point = PlacedRectIndex::Point;
+        using Box = PlacedRectIndex::Box;
+
+        const double margin = std::max(candidateSpacing, maxM2Spacing);
+        const Box searchWindow(
+            Point(candidate.ll.x - margin, candidate.ll.y - margin),
+            Point(candidate.ur.x + margin, candidate.ur.y + margin));
+
+        auto blockedBy = [&](const std::vector<Rect2D<double>>& obstacles, const PlacedRectIndex& index) {
+            for (auto id : index.intersecting(searchWindow)) {
+                const auto& obs = obstacles[id];
+                double h = (obs.ur.x - obs.ll.x) / dbuPerMicron;
+                double v = (obs.ur.y - obs.ll.y) / dbuPerMicron;
+                double obstacleSpacing = std::max(spacingTable->GetSpacingFor(h, v), spacingTable->GetSpacingFor(v, h)) * dbuPerMicron;
+                double spacing = std::max(candidateSpacing, obstacleSpacing);
+
+                if (candidate.ll.x < obs.ur.x + spacing &&
+                    candidate.ur.x > obs.ll.x - spacing &&
+                    candidate.ll.y < obs.ur.y + spacing &&
+                    candidate.ur.y > obs.ll.y - spacing) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        return blockedBy(powerRects, powerM2) || blockedBy(gndRects, gndM2);
+    }
 };
 
 bool PWRoute::PinCoversRect(const std::vector<Rect2D<double>> &pinRects, const Rect2D<double> &viaMetalRect) {
@@ -375,27 +414,11 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
         return false;
     };
     //check via M2 obstancles
-    auto generatedM2Blocked = [this, &layers, dbuPerMicron](
-        const Rect2D<double> &candidate,
-        double candidateSpacing) -> bool {
-        auto spacingTable = layers[2].GetSpacingTable();
-
-        auto blockedBy = [&](const std::vector<Rect2D<double>> &obstacles) {
-            for (const auto &obs : obstacles) {
-                double h = (obs.ur.x - obs.ll.x) / dbuPerMicron;
-                double v = (obs.ur.y - obs.ll.y) / dbuPerMicron;
-                double obstacleSpacing = std::max(spacingTable->GetSpacingFor(h, v), spacingTable->GetSpacingFor(v, h)) * dbuPerMicron;
-                double spacing = std::max(candidateSpacing, obstacleSpacing);
-                if (candidate.ll.x < obs.ur.x + spacing &&
-                    candidate.ur.x > obs.ll.x - spacing &&
-                    candidate.ll.y < obs.ur.y + spacing &&
-                    candidate.ur.y > obs.ll.y - spacing) {
-                    return true;
-                }
-            }
-            return false;
-        };
-        return blockedBy(pwgnd_.powerM2Rects) || blockedBy(pwgnd_.gndM2Rects);
+    auto generatedM2Blocked = [this, &layers, &indexes, dbuPerMicron](
+        const Rect2D<double>& candidate, double candidateSpacing) {
+        return indexes.generatedM2Blocked(candidate, candidateSpacing,
+            pwgnd_.powerM2Rects, pwgnd_.gndM2Rects,
+            layers[2].GetSpacingTable(), dbuPerMicron);
     };
 
     auto viaM2Blocked = [this, &M2obsRect, &layers, &generatedM2Blocked, dbuPerMicron](
@@ -1656,30 +1679,19 @@ bool PWRoute::M2DetailedRouteSNet(PWRouteComponent& component, std::string signa
         return true;
     };
 
-    auto m2RectBlocked = [this, &obsRect, &layers, dbuPerMicron](
-        const Rect2D<double> &candidate,
-        double candidateSpacing) -> bool {
-        auto spacingTable = layers[2].GetSpacingTable();
-
-        auto blockedBy = [&](const std::vector<Rect2D<double>> &obstacles, bool generated) {
-            for (const auto &obs : obstacles) {
-                double spacing = candidateSpacing;
-                if (generated) {
-                    double h = (obs.ur.x - obs.ll.x) / dbuPerMicron;
-                    double v = (obs.ur.y - obs.ll.y) / dbuPerMicron;
-                    double obstacleSpacing = std::max(spacingTable->GetSpacingFor(h, v), spacingTable->GetSpacingFor(v, h)) * dbuPerMicron;
-                    spacing = std::max(candidateSpacing, obstacleSpacing);
-                }
-                if (candidate.ll.x < obs.ur.x + spacing &&
-                    candidate.ur.x > obs.ll.x - spacing &&
-                    candidate.ll.y < obs.ur.y + spacing &&
-                    candidate.ur.y > obs.ll.y - spacing) {
-                    return true;
-                }
+    auto m2RectBlocked = [this, &obsRect, &layers, &indexes, dbuPerMicron](
+        const Rect2D<double>& candidate, double candidateSpacing) {
+        for (const auto& obs : obsRect) {
+            if (candidate.ll.x < obs.ur.x + candidateSpacing &&
+                candidate.ur.x > obs.ll.x - candidateSpacing &&
+                candidate.ll.y < obs.ur.y + candidateSpacing &&
+                candidate.ur.y > obs.ll.y - candidateSpacing) {
+                return true;
             }
-            return false;
-        };
-        return blockedBy(obsRect, false) || blockedBy(pwgnd_.powerM2Rects, true) || blockedBy(pwgnd_.gndM2Rects, true);
+        }
+        return indexes.generatedM2Blocked(candidate, candidateSpacing,
+            pwgnd_.powerM2Rects, pwgnd_.gndM2Rects,
+            layers[2].GetSpacingTable(), dbuPerMicron);
     };
 
 
@@ -2257,13 +2269,14 @@ void PWRoute::DetailedRouteSNetComp(PWRouteComponent& component, DetailedRouteIn
     Point2D<int> powerPoint(-1, -1);
     bool M1power = false, M1ground = false, M2power = false, M2ground = false, M1M3power = false, M1M3ground = false; 
     
-    //use boost index to index new M3 rects
-    auto indexNewM3Rects = [this, &indexes](PlacedRectIndex& index, const std::vector<Rect2D<double>>& rects, PlacedRectIndex::Id first) {
+    //use boost index to index new rects
+    auto indexNewRects = [this](PlacedRectIndex& index, const std::vector<Rect2D<double>>& rects, PlacedRectIndex::Id first,
+        unsigned int layerId, double& maxSpacing) {
         using Point = PlacedRectIndex::Point;
         using Box = PlacedRectIndex::Box;
 
         const double dbuPerMicron = db_ptr_->GetDesignPtr()->GetUnitsDistanceMicrons();
-        auto *spacingTable = db_ptr_->GetTechPtr() ->GetLayersRef()[detailed_route_layer].GetSpacingTable();
+        auto *spacingTable = db_ptr_->GetTechPtr() ->GetLayersRef()[layerId].GetSpacingTable();
 
         for (auto id = first; id < rects.size(); ++id) {
             const auto& rect = rects[id];
@@ -2271,10 +2284,11 @@ void PWRoute::DetailedRouteSNetComp(PWRouteComponent& component, DetailedRouteIn
             double h = (rect.ur.x - rect.ll.x) / dbuPerMicron;
             double v = (rect.ur.y - rect.ll.y) / dbuPerMicron;
             double spacing = std::max(spacingTable->GetSpacingFor(h, v), spacingTable->GetSpacingFor(v, h)) * dbuPerMicron;
-            indexes.maxM3Spacing = std::max(indexes.maxM3Spacing, spacing);
+            maxSpacing = std::max(maxSpacing, spacing);
         }
     };
 
+    const auto firstPowerM2 = pwgnd_.powerM2Rects.size();
     const auto firstPowerM3 = pwgnd_.powerM3Rects.size();
     M1power = M1DetailedRouteSNet(component, "POWER");
     if(!M1power) {
@@ -2285,8 +2299,11 @@ void PWRoute::DetailedRouteSNetComp(PWRouteComponent& component, DetailedRouteIn
                 std::cout << "warning: UNABLE TO PATTERN ROUTE POWER: " << component.name_ << "; cell master: " << component.master_name_ << std::endl;
         }
     }
-    indexNewM3Rects(indexes.powerM3, pwgnd_.powerM3Rects, firstPowerM3);
+    //index M2 and M3 power metals
+    indexNewRects(indexes.powerM2, pwgnd_.powerM2Rects, firstPowerM2, 2, indexes.maxM2Spacing);
+    indexNewRects(indexes.powerM3, pwgnd_.powerM3Rects, firstPowerM3, detailed_route_layer, indexes.maxM3Spacing);
 
+    const auto firstGndM2 = pwgnd_.gndM2Rects.size();
     const auto firstGndM3 = pwgnd_.gndM3Rects.size();
     M1ground = M1DetailedRouteSNet(component, "GROUND");
     if(!M1ground) {
@@ -2297,7 +2314,9 @@ void PWRoute::DetailedRouteSNetComp(PWRouteComponent& component, DetailedRouteIn
                 std::cout << "warning: UNABLE TO PATTERN ROUTE GROUND: " << component.name_ << "; cell master: " << component.master_name_ << std::endl;
         }
     }
-    indexNewM3Rects(indexes.gndM3, pwgnd_.gndM3Rects, firstGndM3);
+    //index M2 and M3 ground metals
+    indexNewRects(indexes.gndM2, pwgnd_.gndM2Rects, firstGndM2, 2, indexes.maxM2Spacing);
+    indexNewRects(indexes.gndM3, pwgnd_.gndM3Rects, firstGndM3, detailed_route_layer, indexes.maxM3Spacing);
 
 
     if(M1power || M2power || M1M3power) {
