@@ -368,11 +368,17 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
         return false;
     };
     //check via M2 obstancles
-    auto generatedM2Blocked = [this](
-    const Rect2D<double> &candidate, double spacing) -> bool {
+    auto generatedM2Blocked = [this, &layers, dbuPerMicron](
+        const Rect2D<double> &candidate,
+        double candidateSpacing) -> bool {
+        auto spacingTable = layers[2].GetSpacingTable();
 
         auto blockedBy = [&](const std::vector<Rect2D<double>> &obstacles) {
             for (const auto &obs : obstacles) {
+                double h = (obs.ur.x - obs.ll.x) / dbuPerMicron;
+                double v = (obs.ur.y - obs.ll.y) / dbuPerMicron;
+                double obstacleSpacing = std::max(spacingTable->GetSpacingFor(h, v), spacingTable->GetSpacingFor(v, h)) * dbuPerMicron;
+                double spacing = std::max(candidateSpacing, obstacleSpacing);
                 if (candidate.ll.x < obs.ur.x + spacing &&
                     candidate.ur.x > obs.ll.x - spacing &&
                     candidate.ll.y < obs.ur.y + spacing &&
@@ -1634,10 +1640,20 @@ bool PWRoute::M2DetailedRouteSNet(PWRouteComponent& component, std::string signa
         return true;
     };
 
-    auto m2RectBlocked = [this, &obsRect]( const Rect2D<double> &candidate, double spacing) -> bool {
+    auto m2RectBlocked = [this, &obsRect, &layers, dbuPerMicron](
+        const Rect2D<double> &candidate,
+        double candidateSpacing) -> bool {
+        auto spacingTable = layers[2].GetSpacingTable();
 
-        auto blockedBy = [&](const std::vector<Rect2D<double>> &obstacles) {
+        auto blockedBy = [&](const std::vector<Rect2D<double>> &obstacles, bool generated) {
             for (const auto &obs : obstacles) {
+                double spacing = candidateSpacing;
+                if (generated) {
+                    double h = (obs.ur.x - obs.ll.x) / dbuPerMicron;
+                    double v = (obs.ur.y - obs.ll.y) / dbuPerMicron;
+                    double obstacleSpacing = std::max(spacingTable->GetSpacingFor(h, v), spacingTable->GetSpacingFor(v, h)) * dbuPerMicron;
+                    spacing = std::max(candidateSpacing, obstacleSpacing);
+                }
                 if (candidate.ll.x < obs.ur.x + spacing &&
                     candidate.ur.x > obs.ll.x - spacing &&
                     candidate.ll.y < obs.ur.y + spacing &&
@@ -1647,9 +1663,9 @@ bool PWRoute::M2DetailedRouteSNet(PWRouteComponent& component, std::string signa
             }
             return false;
         };
-
-        return blockedBy(obsRect) || blockedBy(pwgnd_.powerM2Rects) || blockedBy(pwgnd_.gndM2Rects);
+        return blockedBy(obsRect, false) || blockedBy(pwgnd_.powerM2Rects, true) || blockedBy(pwgnd_.gndM2Rects, true);
     };
+
 
     auto viaM2Blocked = [&m2RectBlocked, &layers, dbuPerMicron](
         const LayerRect &metalLayer,
