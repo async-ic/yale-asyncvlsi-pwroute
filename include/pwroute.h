@@ -156,13 +156,14 @@ class PWRoute {
     void FindRowSNet(std::string componentName, std::string pinName, Rect2D<double> rect, int& powerY, int& gndY);
     void DetailedRouteSNet();
     void RecordViaMetal(const LayerRect &metalLayer, const Point2D<double> &origin, std::vector<Rect2D<double>> &rects);
-    void DetailedRouteSNetComp(PWRouteComponent& component);
+    struct DetailedRouteIndexes;
+    void DetailedRouteSNetComp(PWRouteComponent& component, DetailedRouteIndexes& indexes);
     bool M2DetailedRouteSNet(PWRouteComponent& component, std::string signal, int signalY, 
         std::vector<Wire>& Wires, Point2D<int>& powerPoint);
     void PlaceHighLayerVias(std::vector<Wire>& wires, int X, int Y, 
         std::string topLayerName, int viaIdx, int length, int viaDistance);
-    bool M1M3DetailedRouteSNet(PWRouteComponent& component, std::string signal, int signalY, 
-        std::vector<Wire>& Wires, Point2D<int>& powerPoint);
+    bool M1M3DetailedRouteSNet(PWRouteComponent& component, std::string signal, int signalY, std::vector<Wire>& Wires, Point2D<int>& powerPoint,
+        const DetailedRouteIndexes& indexes);
 
     void findClosestTouchPoints(std::vector<Rect2D<double>>& rects, std::map<int, int>& closestPoint, 
         Track track, int expand, int signalY);
