@@ -2,6 +2,8 @@
 #include <algorithm>
 #include <math.h>
 #include <cmath>
+#include <boost/polygon/polygon.hpp>
+#include <limits>
 #include "pwroute.h"
 
 using namespace phydb;
@@ -992,14 +994,14 @@ void PWRoute::AdjMeshPointFlag() {
    }
 }
 
-// Inspect recorded M3 geometry before implementing repair
+// Inspect recorded M3 geometry and implement repair for M3 holes
 void PWRoute::M3CloseViasPad() {
     auto onHalfDBU = [](double edge) {
         double scaled = edge * 2.0;
         return std::isfinite(scaled) && std::fabs(scaled - std::round(scaled)) < 1e-6;
     };
 
-    auto inspect = [&onHalfDBU](const char* supply, const std::vector<Rect2D<double>>& rects) {
+    auto inspect = [this, &onHalfDBU]( const char* supply, std::vector<Rect2D<double>>& rects, std::vector<Wire>& wires) {
         std::size_t offLattice = 0;
 
         for (const auto& rect : rects) {
@@ -1017,9 +1019,140 @@ void PWRoute::M3CloseViasPad() {
                   << " rectangles=" << rects.size()
                   << " off-half-DBU=" << offLattice
                   << std::endl;
+
+        if (offLattice != 0) {
+            return;
+        }
+        namespace bp = boost::polygon;
+        using Coord = long long;
+        bp::polygon_90_set_data<Coord> metal;
+        const double limit = static_cast<double>(std::numeric_limits<Coord>::max() / 2);
+
+        auto coordinate = [](double edge) {
+            return std::llround(edge * 2.0);
+        };
+
+        for (const auto& rect : rects) {
+            for (double edge : {rect.ll.x, rect.ll.y, rect.ur.x, rect.ur.y}) {
+                if (std::fabs(edge * 2.0) >= limit) {
+                    std::cout << "M3 repair input: " << supply
+                              << " coordinate out of range"
+                              << std::endl;
+                    return;
+                }
+            }
+            metal.insert(bp::rectangle_data<Coord>(
+                coordinate(rect.ll.x),
+                coordinate(rect.ll.y),
+                coordinate(rect.ur.x),
+                coordinate(rect.ur.y)));
+        }
+
+        std::vector<bp::polygon_90_with_holes_data<Coord>> polygons;
+        metal.get(polygons);
+
+        std::size_t holes = 0;
+
+        std::vector<Wire> pendingWires;
+        std::vector<Rect2D<double>> pendingRects;
+
+        const auto m3Name = db_ptr_->GetTechPtr()->GetLayersRef() [detailed_route_layer].GetName();
+
+
+        //Catch the holes made by two vias and their respective wires. Patch them
+        for (const auto& polygon : polygons) {
+            for (auto hole = bp::begin_holes(polygon); hole != bp::end_holes(polygon); ++hole) {
+                ++holes;
+
+                bp::polygon_90_set_data<Coord> missing;
+                missing.insert(*hole);
+                using namespace boost::polygon::operators;
+                missing -= metal;
+                std::vector<bp::rectangle_data<Coord>> pieces;
+                missing.get_rectangles(pieces);
+
+                for (const auto& piece : pieces) {
+                    const Coord lx = bp::xl(piece);
+                    const Coord ly = bp::yl(piece);
+                    const Coord ux = bp::xh(piece);
+                    const Coord uy = bp::yh(piece);
+
+                    const Coord span = ux - lx;
+
+                    bool exact =
+                        span > 0 &&
+                        uy > ly &&
+                        span % 2 == 0 &&
+                        (lx + ux) % 4 == 0 &&
+                        ly % 2 == 0 &&
+                        uy % 2 == 0 &&
+                        span / 2 <= std::numeric_limits<int>::max();
+
+                    if (!exact) {
+                        std::cout << "M3 repair not emitted: "
+                                  << supply
+                                  << " unsupported patch coordinates"
+                                  << std::endl;
+                        return;
+                    }
+
+                    const Coord x = (lx + ux) / 4;
+                    const Coord y0 = ly / 2;
+                    const Coord y1 = uy / 2;
+
+                    for (Coord value : {x, y0, y1}) {
+                        if (value < std::numeric_limits<int>::lowest() || value > std::numeric_limits<int>::max()) {
+                            std::cout << "M3 repair not emitted: "
+                                      << supply
+                                      << " path coordinate out of range"
+                                      << std::endl;
+                            return;
+                        }
+                    }
+
+                    Wire patch;
+                    patch.layerName = m3Name;
+                    patch.numPathPoint = 2;
+                    patch.width = static_cast<int>(span / 2);
+                    patch.coorX[0] = x;
+                    patch.coorX[1] = x;
+                    patch.coorY[0] = y0;
+                    patch.coorY[1] = y1;
+                    patch.ext[0] = 0;
+                    patch.ext[1] = 0;
+
+                    pendingWires.push_back(patch);
+                    pendingRects.emplace_back(lx / 2.0, ly / 2.0, ux / 2.0, uy / 2.0);
+                }
+                if (holes <= 10) {
+                    bp::rectangle_data<Coord> bounds;
+                    bp::extents(bounds, *hole);
+
+                    std::cout << "M3 hole candidate: " << supply
+                              << " index=" << holes
+                              << " bounds-DBU=("
+                              << bp::xl(bounds) / 2.0 << ", "
+                              << bp::yl(bounds) / 2.0 << ")("
+                              << bp::xh(bounds) / 2.0 << ", "
+                              << bp::yh(bounds) / 2.0 << ")"
+                              << std::endl;
+                }
+            }
+        }
+        std::cout << "M3 hole candidates: " << supply
+                  << " total=" << holes
+                  << " (showing at most 10 bounds)"
+                  << std::endl;
+
+        wires.insert(wires.end(), pendingWires.begin(), pendingWires.end());
+        rects.insert(rects.end(), pendingRects.begin(), pendingRects.end());
+
+        std::cout << "M3 hole fill: " << supply
+                  << " patches=" << pendingWires.size()
+                  << std::endl;
     };
-    inspect("POWER", pwgnd_.powerM3Rects);
-    inspect("GROUND", pwgnd_.gndM3Rects);
+    inspect("POWER", pwgnd_.powerM3Rects, pwgnd_.powerWires);
+    inspect("GROUND", pwgnd_.gndM3Rects, pwgnd_.gndWires);
 }
 
 
