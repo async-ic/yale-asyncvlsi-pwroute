@@ -1,6 +1,7 @@
 
 #include <algorithm>
 #include <math.h>
+#include <cmath>
 #include "pwroute.h"
 
 using namespace phydb;
@@ -961,7 +962,7 @@ void PWRoute::RouteSNet() {
     AdjMeshPointFlag();
     DetailedRouteSNet();
     
-    //M3CloseViasPad();
+    M3CloseViasPad();
 
     std::cout << "power/ground routing done!" << std::endl;
 }
@@ -991,89 +992,36 @@ void PWRoute::AdjMeshPointFlag() {
    }
 }
 
-/*
-if there is a spacing violation for vias in adjacent grid points, add a pad to connect them
-*/
+// Inspect recorded M3 geometry before implementing repair
 void PWRoute::M3CloseViasPad() {
-    
-   int dbuPerMicron = db_ptr_->GetDesignPtr()->GetUnitsDistanceMicrons();
-   auto layers = db_ptr_->GetLayersRef();
-   int M3_track_step = layers[detailed_route_layer].GetPitchX() * (double) dbuPerMicron;
-   auto* spacing_table = layers[detailed_route_layer].GetSpacingTable(); //M3 spacing table
-   
-   int viaIdx = topLayerId_2_viaId_[cluster_horizontal_layer]; //check the via of M3-M4
-   auto via = db_ptr_->GetTechPtr()->GetLefViasRef()[viaIdx];
-   auto rect = via.GetLayerRectsRef()[0].rects_[0];
-   double M3M4_via_h = rect.URX() - rect.LLX();
-   //double M3M4_via_v = rect.URY() - rect.LLY();
-   //int M3_spacing = spacing_table->GetSpacingForWidth(M3M4_via_h) * dbuPerMicron;
-   
-   for(auto p : pwgnd_.usedConnectionPoints) {
-      int x = p.x;
-      int y = p.y;
-      if(pwgnd_.usedConnectionPoints.find(Point2D<int>(x + M3_track_step, y)) 
-		      != pwgnd_.usedConnectionPoints.end()) {
-         Wire tmpWire;
-	 tmpWire.layerName = layers[detailed_route_layer].GetName();
-    	 tmpWire.width = M3_track_step + M3M4_via_h * dbuPerMicron;
-    	 tmpWire.coorX[0] = x + M3_track_step / 2;
-    	 tmpWire.coorY[0] = y;
-	 tmpWire.ext[0] = pwgnd_.hmeshWidth / 2;
-    	 tmpWire.coorX[1] = x + M3_track_step / 2;
-    	 tmpWire.coorY[1] = y;
-	 tmpWire.ext[1] = pwgnd_.hmeshWidth / 2;
-    	 tmpWire.numPathPoint = 2;
-    	 tmpWire.viaName = "";
-	
-	 //identify it is POWER or GROUND net
-	 int column = -1;
-         auto& xMesh = pwgnd_.xMesh;
-         for(uint i = 0; i < xMesh.size() - 1; i++) {
-            if(x > xMesh[i] && x < xMesh[i + 1]) {
-               column = i;
-               break;
-            }
-         }
-    	 if(column == -1) {
-            std::cout << "ERROR: used point is not in any column!" << std::endl;
-            exit(1);
-    	 }
-    
-         auto& poweryMesh = pwgnd_.poweryMesh[column];
-         auto& gndyMesh = pwgnd_.gndyMesh[column];
-         bool found = false;
-	 std::string signal;
-	 for(auto coorY : poweryMesh) {
-	    if(y == coorY) {
-	       found = true;
-	       signal = "POWER";
-	       break;
-	    }
-	 }
-	 if(!found) {
-	    for(auto coorY : gndyMesh) {
-	       if(y == coorY) {
-	          found = true;
-	          signal = "GROUND";
-		  break;
-	       }
-	    }
-	 }
+    auto onHalfDBU = [](double edge) {
+        double scaled = edge * 2.0;
+        return std::isfinite(scaled) && std::fabs(scaled - std::round(scaled)) < 1e-6;
+    };
 
-	 if(signal == "POWER") {
-	    pwgnd_.powerWires.push_back(tmpWire);
-	 }
-	 else if(signal == "GROUND") {
-            pwgnd_.gndWires.push_back(tmpWire);
-	 }
-	 else {
-	    std::cout << "ERROR: unable to find signal for point " << x << ", " << y << std::endl;
-	    exit(1);
-	 }
-      }
-   }
-    
+    auto inspect = [&onHalfDBU](const char* supply, const std::vector<Rect2D<double>>& rects) {
+        std::size_t offLattice = 0;
+
+        for (const auto& rect : rects) {
+            bool fits =
+                onHalfDBU(rect.ll.x) &&
+                onHalfDBU(rect.ll.y) &&
+                onHalfDBU(rect.ur.x) &&
+                onHalfDBU(rect.ur.y);
+
+            if (!fits) {
+                ++offLattice;
+            }
+        }
+        std::cout << "M3 repair input: " << supply
+                  << " rectangles=" << rects.size()
+                  << " off-half-DBU=" << offLattice
+                  << std::endl;
+    };
+    inspect("POWER", pwgnd_.powerM3Rects);
+    inspect("GROUND", pwgnd_.gndM3Rects);
 }
+
 
 void PWRoute::ComputeMinLength() {
     auto& layers = db_ptr_->GetLayersRef();
