@@ -1057,6 +1057,49 @@ void PWRoute::M3CloseViasPad() {
 
         const auto m3Name = db_ptr_->GetTechPtr()->GetLayersRef() [detailed_route_layer].GetName();
 
+        auto queuePatch = [&](const bp::rectangle_data<Coord>& piece) {
+            const Coord lx = bp::xl(piece);
+            const Coord ly = bp::yl(piece);
+            const Coord ux = bp::xh(piece);
+            const Coord uy = bp::yh(piece);
+            const Coord span = ux - lx;
+            const bool exact =
+                span > 0 && uy > ly &&
+                span % 2 == 0 && (lx + ux) % 4 == 0 &&
+                ly % 2 == 0 && uy % 2 == 0 &&
+                span / 2 <= std::numeric_limits<int>::max();
+            if (!exact) {
+                std::cout << "M3 repair not emitted: " << supply
+                          << " unsupported patch coordinates"
+                          << std::endl;
+                return false;
+            }
+            const Coord x = (lx + ux) / 4;
+            const Coord y0 = ly / 2;
+            const Coord y1 = uy / 2;
+            for (Coord value : {x, y0, y1}) {
+                if (value < std::numeric_limits<int>::lowest() || value > std::numeric_limits<int>::max()) {
+                    std::cout << "M3 repair not emitted: " << supply
+                              << " path coordinate out of range"
+                              << std::endl;
+                    return false;
+                }
+            }
+            Wire patch;
+            patch.layerName = m3Name;
+            patch.numPathPoint = 2;
+            patch.width = static_cast<int>(span / 2);
+            patch.coorX[0] = x;
+            patch.coorX[1] = x;
+            patch.coorY[0] = y0;
+            patch.coorY[1] = y1;
+            patch.ext[0] = 0;
+            patch.ext[1] = 0;
+            pendingWires.push_back(patch);
+            pendingRects.emplace_back(lx / 2.0, ly / 2.0, ux / 2.0, uy / 2.0);
+            return true;
+        };
+
         //this simplifies identification of inward corners that have to be patched 
         struct M3Shape {
             bp::rectangle_data<Coord> bounds;
@@ -1234,7 +1277,7 @@ void PWRoute::M3CloseViasPad() {
         corners.get_rectangles(cornerPieces);
         std::cout << "M3 corner candidates: " << supply
                   << " rectangles=" << cornerPieces.size()
-                  << " (not emitted)" << std::endl;
+                  << std::endl;
         for (std::size_t i = 0; i < cornerPieces.size() && i < 10; ++i) {
             const auto& r = cornerPieces[i];
             std::cout << "M3 corner candidate: " << supply
@@ -1260,57 +1303,9 @@ void PWRoute::M3CloseViasPad() {
                 missing.get_rectangles(pieces);
 
                 for (const auto& piece : pieces) {
-                    const Coord lx = bp::xl(piece);
-                    const Coord ly = bp::yl(piece);
-                    const Coord ux = bp::xh(piece);
-                    const Coord uy = bp::yh(piece);
-
-                    const Coord span = ux - lx;
-
-                    bool exact =
-                        span > 0 &&
-                        uy > ly &&
-                        span % 2 == 0 &&
-                        (lx + ux) % 4 == 0 &&
-                        ly % 2 == 0 &&
-                        uy % 2 == 0 &&
-                        span / 2 <= std::numeric_limits<int>::max();
-
-                    if (!exact) {
-                        std::cout << "M3 repair not emitted: "
-                                  << supply
-                                  << " unsupported patch coordinates"
-                                  << std::endl;
+                    if (!queuePatch(piece)) {
                         return;
                     }
-
-                    const Coord x = (lx + ux) / 4;
-                    const Coord y0 = ly / 2;
-                    const Coord y1 = uy / 2;
-
-                    for (Coord value : {x, y0, y1}) {
-                        if (value < std::numeric_limits<int>::lowest() || value > std::numeric_limits<int>::max()) {
-                            std::cout << "M3 repair not emitted: "
-                                      << supply
-                                      << " path coordinate out of range"
-                                      << std::endl;
-                            return;
-                        }
-                    }
-
-                    Wire patch;
-                    patch.layerName = m3Name;
-                    patch.numPathPoint = 2;
-                    patch.width = static_cast<int>(span / 2);
-                    patch.coorX[0] = x;
-                    patch.coorX[1] = x;
-                    patch.coorY[0] = y0;
-                    patch.coorY[1] = y1;
-                    patch.ext[0] = 0;
-                    patch.ext[1] = 0;
-
-                    pendingWires.push_back(patch);
-                    pendingRects.emplace_back(lx / 2.0, ly / 2.0, ux / 2.0, uy / 2.0);
                 }
                 if (holes <= 10) {
                     bp::rectangle_data<Coord> bounds;
@@ -1332,11 +1327,39 @@ void PWRoute::M3CloseViasPad() {
                   << " (showing at most 10 bounds)"
                   << std::endl;
 
+        const auto holePatchCount = pendingWires.size();
+
+        bp::polygon_90_set_data<Coord> holeFills;
+        for (const auto& r : pendingRects) {
+            holeFills.insert(bp::rectangle_data<Coord>(
+                                        coordinate(r.ll.x), coordinate(r.ll.y),
+                                        coordinate(r.ur.x), coordinate(r.ur.y)));
+        }
+
+        using namespace boost::polygon::operators;
+        corners -= holeFills;
+
+        cornerPieces.clear();
+        corners.get_rectangles(cornerPieces);
+
+        std::size_t rejectedCorners = 0;
+        for (const auto& piece : cornerPieces) {
+            if (!queuePatch(piece)) {
+                ++rejectedCorners;
+            }
+        }
+        const auto cornerPatchCount = pendingWires.size() - holePatchCount;
+
         wires.insert(wires.end(), pendingWires.begin(), pendingWires.end());
         rects.insert(rects.end(), pendingRects.begin(), pendingRects.end());
 
         std::cout << "M3 hole fill: " << supply
-                  << " patches=" << pendingWires.size()
+                  << " patches=" << holePatchCount
+                  << std::endl;
+
+        std::cout << "M3 corner fill: " << supply
+                  << " patches=" << cornerPatchCount
+                  << " rejected=" << rejectedCorners
                   << std::endl;
     };
     inspect("POWER", pwgnd_.powerM3Rects, pwgnd_.powerWires);
