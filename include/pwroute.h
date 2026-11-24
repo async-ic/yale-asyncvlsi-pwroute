@@ -6,6 +6,8 @@
 #include "pwroute_component.h"
 #include "pin_edge.h"
 #include <utility>
+#include <cstddef>
+#include <limits>
 using namespace phydb;
 
 #if !defined(uint)
@@ -29,6 +31,7 @@ public:
     std::string layerName;
     std::string viaName;
     int width;
+    std::size_t connectionId = std::numeric_limits<std::size_t>::max();
     Wire() {
         coorX[0] = -1;
         coorY[0] = -1;

@@ -2323,6 +2323,7 @@ void PWRoute::DetailedRouteSNetComp(PWRouteComponent& component, DetailedRouteIn
         }
     };
 
+    const auto firstPowerWire = pwgnd_.powerWires.size();
     const auto firstPowerM2 = pwgnd_.powerM2Rects.size();
     const auto firstPowerM3 = pwgnd_.powerM3Rects.size();
     M1power = M1DetailedRouteSNet(component, "POWER");
@@ -2334,10 +2335,14 @@ void PWRoute::DetailedRouteSNetComp(PWRouteComponent& component, DetailedRouteIn
                 std::cout << "warning: UNABLE TO PATTERN ROUTE POWER: " << component.name_ << "; cell master: " << component.master_name_ << std::endl;
         }
     }
+    for (auto i = firstPowerWire; i < pwgnd_.powerWires.size(); ++i) {
+        pwgnd_.powerWires[i].connectionId = firstPowerWire;
+    }
     //index M2 and M3 power metals
     indexNewRects(indexes.powerM2, pwgnd_.powerM2Rects, firstPowerM2, 2, indexes.maxM2Spacing);
     indexNewRects(indexes.powerM3, pwgnd_.powerM3Rects, firstPowerM3, detailed_route_layer, indexes.maxM3Spacing);
 
+    const auto firstGndWire = pwgnd_.gndWires.size();
     const auto firstGndM2 = pwgnd_.gndM2Rects.size();
     const auto firstGndM3 = pwgnd_.gndM3Rects.size();
     M1ground = M1DetailedRouteSNet(component, "GROUND");
@@ -2348,6 +2353,9 @@ void PWRoute::DetailedRouteSNetComp(PWRouteComponent& component, DetailedRouteIn
             if(!M1M3ground)
                 std::cout << "warning: UNABLE TO PATTERN ROUTE GROUND: " << component.name_ << "; cell master: " << component.master_name_ << std::endl;
         }
+    }
+    for (auto i = firstGndWire; i < pwgnd_.gndWires.size(); ++i) {
+        pwgnd_.gndWires[i].connectionId = firstGndWire;
     }
     //index M2 and M3 ground metals
     indexNewRects(indexes.gndM2, pwgnd_.gndM2Rects, firstGndM2, 2, indexes.maxM2Spacing);

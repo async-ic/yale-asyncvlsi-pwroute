@@ -5,6 +5,7 @@
 #include <boost/polygon/polygon.hpp>
 #include <limits>
 #include "pwroute.h"
+#include "placed_rect_index.h"
 
 using namespace phydb;
 namespace pwroute {
@@ -1042,10 +1043,8 @@ void PWRoute::M3CloseViasPad() {
                 }
             }
             metal.insert(bp::rectangle_data<Coord>(
-                coordinate(rect.ll.x),
-                coordinate(rect.ll.y),
-                coordinate(rect.ur.x),
-                coordinate(rect.ur.y)));
+                coordinate(rect.ll.x), coordinate(rect.ll.y),
+                coordinate(rect.ur.x), coordinate(rect.ur.y)));
         }
 
         std::vector<bp::polygon_90_with_holes_data<Coord>> polygons;
@@ -1057,6 +1056,195 @@ void PWRoute::M3CloseViasPad() {
         std::vector<Rect2D<double>> pendingRects;
 
         const auto m3Name = db_ptr_->GetTechPtr()->GetLayersRef() [detailed_route_layer].GetName();
+
+        //this simplifies identification of inward corners that have to be patched 
+        struct M3Shape {
+            bp::rectangle_data<Coord> bounds;
+            std::size_t connectionId;
+            bool isVia;
+            bool vertical;
+        };
+
+        std::vector<M3Shape> shapes;
+        bool shapesValid = true;
+
+        auto addShape = [&](const Rect2D<double>& r, std::size_t connectionId, bool isVia, bool vertical) {
+            for (double edge : {r.ll.x, r.ll.y, r.ur.x, r.ur.y}) {
+                if (!onHalfDBU(edge) || std::fabs(edge * 2.0) >= limit) {
+                    shapesValid = false;
+                    return;
+                }
+            }
+
+            if (r.ll.x >= r.ur.x || r.ll.y >= r.ur.y) {
+                shapesValid = false;
+                return;
+            }
+
+            shapes.push_back({bp::rectangle_data<Coord>(
+                    coordinate(r.ll.x), coordinate(r.ll.y),
+                    coordinate(r.ur.x), coordinate(r.ur.y)),
+                    connectionId, isVia, vertical });
+        };
+
+        std::map<std::string, std::vector<Rect2D<double>>> m3Masters;
+
+        for (auto& via : db_ptr_->GetTechPtr()->GetLefViasRef()) {
+            auto& footprints = m3Masters[via.GetName()];
+
+            for (const auto& layer : via.GetLayerRectsRef()) {
+                if (layer.layer_name_ == m3Name) {
+                    footprints.insert(footprints.end(), layer.rects_.begin(), layer.rects_.end());
+                }
+            }
+        }
+        const double dbuPerMicron = db_ptr_->GetDesignPtr()->GetUnitsDistanceMicrons();
+
+        const auto noConnection = std::numeric_limits<std::size_t>::max();
+
+        for (const auto& wire : wires) {
+            if (wire.connectionId == noConnection) {
+                continue;
+            }
+
+            if (wire.numPathPoint == 1) {
+                auto master = m3Masters.find(wire.viaName);
+
+                if (master == m3Masters.end()) {
+                    shapesValid = false;
+                    continue;
+                }
+
+                for (const auto& r : master->second) {
+                    Rect2D<double> placed(
+                        wire.coorX[0] + r.ll.x * dbuPerMicron,
+                        wire.coorY[0] + r.ll.y * dbuPerMicron,
+                        wire.coorX[0] + r.ur.x * dbuPerMicron,
+                        wire.coorY[0] + r.ur.y * dbuPerMicron);
+
+                    addShape(placed, wire.connectionId, true, true);
+                }
+            }
+            else if (wire.numPathPoint == 2 && wire.layerName == m3Name) {
+                if (wire.width <= 0) {
+                    shapesValid = false;
+                    continue;
+                }
+
+                const bool vertical = wire.coorX[0] == wire.coorX[1];
+
+                if (!vertical && wire.coorY[0] != wire.coorY[1]) {
+                    shapesValid = false;
+                    continue;
+                }
+                const double* along = vertical ? wire.coorY : wire.coorX;
+
+                const int lower = along[0] <= along[1] ? 0 : 1;
+                const int upper = 1 - lower;
+                const double halfWidth = wire.width / 2.0;
+
+                const double lowerExt = wire.ext[lower] >= 0 ? wire.ext[lower] : 0.0;
+                const double upperExt = wire.ext[upper] >= 0 ? wire.ext[upper] : 0.0;
+
+                const double low = along[lower] - lowerExt;
+                const double high = along[upper] + upperExt;
+
+                const double across = vertical ? wire.coorX[0] : wire.coorY[0];
+
+                Rect2D<double> placed = vertical
+                    ? Rect2D<double>( across - halfWidth, low, across + halfWidth, high)
+                    : Rect2D<double>(low, across - halfWidth, high, across + halfWidth);
+
+                addShape(placed, wire.connectionId, false, vertical);
+            }
+        }
+        if (!shapesValid) {
+            std::cout << "M3 corner repair unavailable: "
+                      << supply
+                      << " invalid attributed footprint"
+                      << std::endl;
+        }
+
+        bp::polygon_90_set_data<Coord> corners;
+        if (shapesValid) {
+            bp::polygon_90_set_data<Coord> cornerMetal;
+            for (const auto& shape : shapes) {
+                cornerMetal.insert(shape.bounds);
+            }
+            using Box = PlacedRectIndex::Box;
+            using Point = PlacedRectIndex::Point;
+            auto box = [](const bp::rectangle_data<Coord>& r) {
+                return Box(Point(bp::xl(r) / 2.0, bp::yl(r) / 2.0), Point(bp::xh(r) / 2.0, bp::yh(r) / 2.0));
+            };
+            PlacedRectIndex viaIndex;
+            for (std::size_t i = 0; i < shapes.size(); ++i) {
+                if (shapes[i].isVia) {
+                    viaIndex.insert(box(shapes[i].bounds), i);
+                }
+            }
+            for (const auto& wire : shapes) {
+                if (wire.isVia) continue;
+                const auto& w = wire.bounds;
+                std::vector<bp::rectangle_data<Coord>> contactRects{w};
+                auto contactBounds = w;
+                for (auto id : viaIndex.intersecting(box(w))) {
+                    const auto& ownVia = shapes[id];
+                    if (ownVia.connectionId != wire.connectionId) 
+                        continue;
+                    const auto& v = ownVia.bounds;
+                    bp::rectangle_data<Coord> r = wire.vertical
+                        ? bp::rectangle_data<Coord>(std::max(bp::xl(w), bp::xl(v)), bp::yl(v),
+                                                    std::min(bp::xh(w), bp::xh(v)), bp::yh(v))
+                        : bp::rectangle_data<Coord>( bp::xl(v), std::max(bp::yl(w), bp::yl(v)),
+                                                     bp::xh(v), std::min(bp::yh(w), bp::yh(v)));
+                    if (bp::xl(r) >= bp::xh(r) || bp::yl(r) >= bp::yh(r)) 
+                        continue;
+                    contactRects.push_back(r);
+                    contactBounds = bp::rectangle_data<Coord>(
+                        std::min(bp::xl(contactBounds), bp::xl(r)),
+                        std::min(bp::yl(contactBounds), bp::yl(r)),
+                        std::max(bp::xh(contactBounds), bp::xh(r)),
+                        std::max(bp::yh(contactBounds), bp::yh(r)));
+                }
+                for (auto id : viaIndex.intersecting(box(contactBounds))) {
+                    const auto& via = shapes[id];
+                    const auto& v = via.bounds;
+                    const bool contact = std::any_of(contactRects.begin(), contactRects.end(), [&](const bp::rectangle_data<Coord>& r) {
+                            return std::max(bp::xl(r), bp::xl(v)) < std::min(bp::xh(r), bp::xh(v)) &&
+                                   std::max(bp::yl(r), bp::yl(v)) < std::min(bp::yh(r), bp::yh(v));
+                        });
+                    if (!contact) continue;
+                    if (wire.vertical) {
+                        if (bp::xl(v) <= bp::xl(w) && bp::xh(v) >= bp::xh(w)) 
+                            continue;
+                        corners.insert(bp::rectangle_data<Coord>(bp::xl(w), bp::yl(v), bp::xh(w), bp::yh(v)));
+                    }
+                    else {
+                        if (bp::yl(v) <= bp::yl(w) && bp::yh(v) >= bp::yh(w)) 
+                            continue;
+                        corners.insert(bp::rectangle_data<Coord>(bp::xl(v), bp::yl(w), bp::xh(v), bp::yh(w)));
+                    }
+                }
+            }
+            using namespace boost::polygon::operators;
+            corners -= cornerMetal;
+        }
+
+        std::vector<bp::rectangle_data<Coord>> cornerPieces;
+        corners.get_rectangles(cornerPieces);
+        std::cout << "M3 corner candidates: " << supply
+                  << " rectangles=" << cornerPieces.size()
+                  << " (not emitted)" << std::endl;
+        for (std::size_t i = 0; i < cornerPieces.size() && i < 10; ++i) {
+            const auto& r = cornerPieces[i];
+            std::cout << "M3 corner candidate: " << supply
+                      << " bounds-DBU=("
+                      << bp::xl(r) / 2.0 << ", "
+                      << bp::yl(r) / 2.0 << ")("
+                      << bp::xh(r) / 2.0 << ", "
+                      << bp::yh(r) / 2.0 << ")"
+                      << std::endl;
+        }
 
 
         //Catch the holes made by two vias and their respective wires. Patch them
