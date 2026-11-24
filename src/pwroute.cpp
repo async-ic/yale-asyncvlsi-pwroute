@@ -1403,6 +1403,15 @@ void PWRoute::SetCenterVias(bool center_vias) {
 }
 
 void PWRoute::SetViaCutLimits(int m1_m2_min, int m1_m2_max, int m2_m3_min, int m2_m3_max) {
+    if (m1_m2_min < 0 || m1_m2_max < 0 || m2_m3_min < 0 || m2_m3_max < 0 ||
+        (m1_m2_max != 0 && m1_m2_min > m1_m2_max) || (m2_m3_max != 0 && m2_m3_min > m2_m3_max)) {
+        std::cerr << "ERROR: invalid via cut limits. "
+                  << "Limits must be nonnegative; "
+                  << "a nonzero maximum must be >= minimum."
+                  << std::endl;
+        exit(1);
+    }
+
     m1_m2_min_cuts_ = m1_m2_min;
     m1_m2_max_cuts_ = m1_m2_max;
     m2_m3_min_cuts_ = m2_m3_min;
@@ -1460,7 +1469,7 @@ void PWRoute::RunPWRoute() {
 
 phydb::SNet* PWRoute::FindSNet(SignalUse signal) {
     bool debug = false;
-    auto snet_ref_v = db_ptr_->GetSNetRef();
+    auto &snet_ref_v = db_ptr_->GetSNetRef();
     bool found = false;
     phydb::SNet* snet_ptr = nullptr;
     for(uint i = 0; i < snet_ref_v.size(); i++) {
