@@ -172,17 +172,6 @@ void PWRoute::SetDefaultVia() {
         }
         assert(found_lefvia_id != -1);
         topLayerId_2_viaId_[layerid] = found_lefvia_id;
-        if(verbose_ >= debug){
-            auto &selected = vias[found_lefvia_id];
-            auto &shapes = selected.GetLayerRectsRef();
-            std::cout << "Default via for " << layer_name
-                      << ": " << selected.GetName()
-                      << " [id " << found_lefvia_id << "]"
-                      << " layers: " << shapes[0].layer_name_
-                      << " " << shapes[1].layer_name_
-                      << " " << shapes[2].layer_name_
-                      << std::endl;
-        }
     }
 }
 

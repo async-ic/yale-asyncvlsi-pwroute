@@ -679,12 +679,6 @@ bool PWRoute::M1M3DetailedRouteSNet(PWRouteComponent& component, std::string sig
        double spacing1 = M2_spacing_table->GetSpacingFor(h, v);
        double spacing2 = M2_spacing_table->GetSpacingFor(v, h);
        M2_spacing = (double) std::max(spacing1, spacing2) * (double) dbuPerMicron;
-      if (verbose_ >= debug) {
-           std::cout << "M2 pad spacing: "
-                     << M2_spacing / dbuPerMicron
-                     << " um" << std::endl;
-       }
-
     }
         
     int M3_width = layers[4].GetWidth() * dbuPerMicron;
@@ -2224,31 +2218,8 @@ bool PWRoute::M2DetailedRouteSNet(PWRouteComponent& component, std::string signa
         RecordViaMetal(vias[selectedViaIdx].GetLayerRectsRef()[2],
                        selectedViaOrigin,
                        placedM3Rects);
-        if (verbose_ >= debug) {
-            Point2D<double> origin(tmpWire.coorX[0], tmpWire.coorY[0]);
-            bool covered = viaM2PinCovered(viaID, origin);
-                        std::cout << "Direct M2 access emitted:"
-                      << " instance: " << component.name_
-                      << " supply: " << signal
-                      << " via: " << vias[viaID].GetName()
-                      << " cuts: "
-                      << vias[viaID].GetLayerRectsRef()[1].rects_.size()
-                      << " origin: (" << origin.x << ", " << origin.y << ") DBU"
-                      << " M2-covered: " << (covered ? "yes" : "no")
-                      << std::endl;
 
-            if (!covered) {
-                std::cout << "Direct M2 access protrusion:"
-                          << " instance: " << component.name_
-                          << " supply: " << signal
-                          << " via: " << vias[viaID].GetName()
-                          << " origin: (" << tmpWire.coorX[0]
-                          << ", " << tmpWire.coorY[0] << ") DBU"
-                          << std::endl;
-            }
-        }
-
-        
+        Point2D<double> origin(tmpWire.coorX[0], tmpWire.coorY[0]);
         tmpWire.coorX[0] = touchX + zRouteOffset; 
         tmpWire.coorY[0] = signalY; 
         tmpWire.numPathPoint = 1;
@@ -2277,16 +2248,6 @@ void PWRoute::RecordViaMetal(const LayerRect &metalLayer, const Point2D<double> 
             origin.y + metal.ll.y * dbuPerMicron,
             origin.x + metal.ur.x * dbuPerMicron,
             origin.y + metal.ur.y * dbuPerMicron);
-
-        if (verbose_ >= debug) {
-        const auto &placed = rects.back();
-            std::cout << "Via metal recorded: layer: " << metalLayer.layer_name_
-                      << " origin: (" << origin.x << ", " << origin.y << ")"
-                      << " rect: (" << placed.ll.x << ", " << placed.ll.y
-                      << ")(" << placed.ur.x << ", " << placed.ur.y << ")"
-                      << " DBU; stored: " << rects.size()
-                      << std::endl;
-        }
     }
 }
 
